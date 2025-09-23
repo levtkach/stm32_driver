@@ -1,0 +1,4 @@
+pyserial
+pyusb
+stlink
+pystlink
