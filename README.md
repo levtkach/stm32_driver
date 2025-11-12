@@ -11,15 +11,12 @@
   - ST-Link через STM32CubeProgrammer
 - Работа с платой тестирования ЦСУ
 
-## Планы развития
-
-В дальнейшем планируется реализация API протокола для взаимодействия с платой тестирования ЦСУ.
-
 ## Установка
 
 ```bash
 pip install -r requirements.txt
 ```
+В директорию firmware положить файлы firmware/PS1200_master.hex, firmware/PS1200_slave.hex
 
 ## Использование
 

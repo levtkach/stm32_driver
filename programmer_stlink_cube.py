@@ -16,6 +16,9 @@ class STLinkProgrammerCube:
         possible_paths = [
             "STM32_Programmer_CLI",
             "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32_Programmer_CLI",
+            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/STM32_Programmer_CLI",
+            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
+            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/bin/STM32_Programmer_CLI",
             "/usr/local/bin/STM32_Programmer_CLI",
             "/opt/STM32CubeProgrammer/bin/STM32_Programmer_CLI",
         ]
@@ -27,7 +30,7 @@ class STLinkProgrammerCube:
                 )
                 if result.returncode == 0:
                     return path
-            except:
+            except Exception:
                 continue
 
         return None

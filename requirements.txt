@@ -1,4 +1,5 @@
 pyserial
 pyusb
-stlink
-pystlink
+# stlink
+# pystlink
+# py-stlink
