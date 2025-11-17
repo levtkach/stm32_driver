@@ -12,6 +12,83 @@ from pathlib import Path
 import time
 
 
+def connect_to_uart_port(port_name, baudrate=115200):
+    print(f"[UART] Попытка подключения к порту: {port_name}")
+    print(f"[UART] Параметры подключения:")
+    print(f"  - Скорость: {baudrate} бод")
+    print(f"  - Размер данных: 8 бит")
+    print(f"  - Parity: None")
+    print(f"  - Стоп-биты: 1")
+    print(f"  - Timeout: 1 сек")
+    print(f"  - Flow control: отключен (xonxoff=False, rtscts=False, dsrdtr=False)")
+    
+    try:
+        print(f"[UART] Открытие последовательного порта...")
+        serial_port = serial.Serial(
+            port=port_name,
+            baudrate=baudrate,
+            bytesize=serial.EIGHTBITS,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            timeout=1,
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False
+        )
+        print(f"[UART] Порт открыт, проверка состояния...")
+        
+        print(f"[UART] Установка DTR и RTS в состояние Off...")
+        serial_port.dtr = False
+        serial_port.rts = False
+        print(f"[UART] DTR установлен: {serial_port.dtr}")
+        print(f"[UART] RTS установлен: {serial_port.rts}")
+        
+        if serial_port.is_open:
+            print(f"[UART] ✓ Успешно подключено к {port_name}")
+            print(f"[UART] Детали подключения:")
+            print(f"  - Порт: {serial_port.port}")
+            print(f"  - Скорость: {serial_port.baudrate} бод")
+            print(f"  - Размер данных: {serial_port.bytesize} бит")
+            print(f"  - Parity: {serial_port.parity}")
+            print(f"  - Стоп-биты: {serial_port.stopbits}")
+            print(f"  - Timeout: {serial_port.timeout} сек")
+            print(f"  - XON/XOFF: {serial_port.xonxoff}")
+            print(f"  - RTS/CTS: {serial_port.rtscts}")
+            print(f"  - DSR/DTR: {serial_port.dsrdtr}")
+            print(f"  - DTR состояние: {serial_port.dtr}")
+            print(f"  - RTS состояние: {serial_port.rts}")
+            print(f"  - Порт открыт: {serial_port.is_open}")
+            if hasattr(serial_port, 'in_waiting'):
+                print(f"  - Байт в буфере: {serial_port.in_waiting}")
+            return serial_port
+        else:
+            error_msg = f"Не удалось открыть {port_name}: порт не открыт после инициализации"
+            print(f"[UART] ✗ ОШИБКА: {error_msg}")
+            raise serial.SerialException(error_msg)
+            
+    except serial.SerialException as e:
+        error_msg = f"Ошибка подключения к {port_name}: {e}"
+        print(f"[UART] ✗ ОШИБКА SerialException: {error_msg}")
+        print(f"[UART] Детали ошибки: тип={type(e).__name__}, сообщение={str(e)}")
+        raise serial.SerialException(error_msg)
+    except FileNotFoundError as e:
+        error_msg = f"Порт {port_name} не найден: {e}"
+        print(f"[UART] ✗ ОШИБКА FileNotFoundError: {error_msg}")
+        print(f"[UART] Убедитесь, что устройство подключено и порт существует")
+        raise Exception(error_msg)
+    except PermissionError as e:
+        error_msg = f"Нет доступа к порту {port_name}: {e}"
+        print(f"[UART] ✗ ОШИБКА PermissionError: {error_msg}")
+        print(f"[UART] Порт может быть занят другим приложением")
+        raise Exception(error_msg)
+    except Exception as e:
+        error_msg = f"Неожиданная ошибка при открытии порта {port_name}: {e}"
+        print(f"[UART] ✗ ОШИБКА Exception: {error_msg}")
+        print(f"[UART] Тип ошибки: {type(e).__name__}")
+        print(f"[UART] Детали: {str(e)}")
+        raise Exception(error_msg)
+
+
 def main():
     programmer = BaseProgrammer()
 
@@ -29,7 +106,7 @@ def main():
         selected_address = 0x08000000
         selected_description = "Flash начало"
         uart_port = detect_serial_port(selected_device)
-        programmer.selected_uart = serial.Serial(uart_port, baudrate=115200, timeout=1)
+        programmer.selected_uart = connect_to_uart_port(uart_port, baudrate=115200)
         print(f"Открыто UART подключение на порту {uart_port}")
         programmer.send_command_uart(
             "SET EN_12V=ON\n".encode("utf-8"), "EN_12V=ON".encode("utf-8")
@@ -41,9 +118,7 @@ def main():
                 print(f"Выбран UART порт: {uart_port}")
                 if programmer.selected_uart is None:
                     try:
-                        programmer.selected_uart = serial.Serial(
-                            uart_port, baudrate=115200, timeout=1
-                        )
+                        programmer.selected_uart = connect_to_uart_port(uart_port, baudrate=115200)
                         print(f"Открыто UART подключение на порту {uart_port}")
                     except serial.SerialException as e:
                         raise ValueError(
