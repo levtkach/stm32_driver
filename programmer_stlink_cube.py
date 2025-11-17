@@ -2,7 +2,10 @@ import subprocess
 import tempfile
 import os
 import time
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class STLinkProgrammerCube:
@@ -96,9 +99,9 @@ class STLinkProgrammerCube:
                 return True
             else:
                 if result.stderr:
-                    print(f"STM32CubeProgrammer stderr: {result.stderr}")
+                    logger.error(f"STM32CubeProgrammer stderr: {result.stderr}")
                 if result.stdout and "error" in result.stdout.lower():
-                    print(f"STM32CubeProgrammer stdout (ошибка): {result.stdout}")
+                    logger.error(f"STM32CubeProgrammer stdout (ошибка): {result.stdout}")
                 return False
 
         except Exception as e:

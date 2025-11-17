@@ -1,9 +1,20 @@
 import sys
 import io
+import logging
 
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 from programmer_base import BaseProgrammer
 from serial.tools import list_ports
@@ -30,7 +41,7 @@ def connect_to_uart_port(port_name, baudrate=115200):
         serial_port.rts = False
         
         if serial_port.is_open:
-            print(f"[UART] ✓ Подключено к {port_name}")
+            logger.info(f"[UART] ✓ Подключено к {port_name}")
             return serial_port
         else:
             raise serial.SerialException(f"Не удалось открыть {port_name}")
@@ -46,12 +57,12 @@ def main():
 
     devices = programmer.find_devices()
     if not devices:
-        print("Устройства не найдены")
+        logger.warning("Устройства не найдены")
         return
     try:
 
         first_device = devices[0]
-        print(f"Выбрано устройство {first_device}")
+        logger.info(f"Выбрано устройство {first_device}")
         if not programmer.select_device(1):
             raise RuntimeError("Нет доступных устройств")
         selected_device = programmer.selected
@@ -59,7 +70,7 @@ def main():
         selected_description = "Flash начало"
         uart_port = detect_serial_port(selected_device)
         programmer.selected_uart = connect_to_uart_port(uart_port, baudrate=115200)
-        print(f"Открыто UART подключение на порту {uart_port}")
+        logger.info(f"Открыто UART подключение на порту {uart_port}")
         programmer.send_command_uart(
             "SET EN_12V=ON\n".encode("utf-8"), "EN_12V=ON".encode("utf-8")
         )
@@ -67,11 +78,11 @@ def main():
         for target_mode in ("HV", "LV"):
 
             if uart_port:
-                print(f"Выбран UART порт: {uart_port}")
+                logger.info(f"Выбран UART порт: {uart_port}")
                 if programmer.selected_uart is None:
                     try:
                         programmer.selected_uart = connect_to_uart_port(uart_port, baudrate=115200)
-                        print(f"Открыто UART подключение на порту {uart_port}")
+                        logger.info(f"Открыто UART подключение на порту {uart_port}")
                     except serial.SerialException as e:
                         raise ValueError(
                             f"Не удалось открыть UART порт {uart_port}: {e}"
@@ -85,7 +96,7 @@ def main():
 
                     time.sleep(2)
             else:
-                print("Не удалось определить UART порт")
+                logger.warning("Не удалось определить UART порт")
 
             if target_mode is None:
                 target_mode = prompt_target_mode()
@@ -95,7 +106,7 @@ def main():
                     target_mode
                 )
             except (FileNotFoundError, ValueError) as firmware_error:
-                print(
+                logger.error(
                     f"Не удалось загрузить прошивку для режима {target_mode}: {firmware_error}"
                 )
                 return
@@ -106,7 +117,7 @@ def main():
                     f"Прошивка рассчитана на {hex(firmware_start)}, выбрано {hex(selected_address)}."
                 )
 
-            print(
+            logger.info(
                 f"Запись прошивки {firmware_path.name} размером {len(firmware_data)} байт "
                 f"в {selected_description} (адрес {hex(selected_address)})..."
             )
@@ -125,7 +136,7 @@ def main():
                 "SET EN_12V=ON\n".encode("utf-8"), "EN_12V=ON".encode("utf-8")
             )
 
-            print(f"Результат: {'успех' if success else 'ошибка'}")
+            logger.info(f"Результат: {'успех' if success else 'ошибка'}")
     except Exception as e:
         raise ValueError(f"Ошибка: {e}")
 
@@ -215,7 +226,7 @@ def prompt_target_mode():
         user_input = input("Выберите режим записи (HV/LV): ").strip().upper()
         if user_input in {"HV", "LV"}:
             return user_input
-        print("Некорректный режим. Введите 'HV' или 'LV'.")
+        logger.warning("Некорректный режим. Введите 'HV' или 'LV'.")
 
 
 def load_firmware_image(mode):

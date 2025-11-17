@@ -6,6 +6,9 @@ import serial
 import time
 import os
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _init_usb_backend():
@@ -189,7 +192,7 @@ class BaseProgrammer:
                 lib_programmer = STLinkProgrammerLib(self.selected)
                 success = lib_programmer.write_bytes(data, address)
                 if success:
-                    print("Запись выполнена через STLinkProgrammerLib")
+                    logger.info("Запись выполнена через STLinkProgrammerLib")
             except Exception as e:
                 last_error = f"STLinkProgrammerLib: {e}"
                 success = False
@@ -207,12 +210,10 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
-                    print(
-                        f"Попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
-                    )
+                    logger.info(f"Попытка записи через STM32CubeProgrammer: {programmer.cube_path}")
                     success = programmer.write_bytes(data, address)
                     if success:
-                        print("Запись выполнена через STM32CubeProgrammer")
+                        logger.info("Запись выполнена через STM32CubeProgrammer")
                     else:
                         last_error = "STM32CubeProgrammer: запись не удалась"
                 else:
@@ -228,10 +229,10 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
-                    print(f"Попытка записи через OpenOCD: {programmer.openocd_path}")
+                    logger.info(f"Попытка записи через OpenOCD: {programmer.openocd_path}")
                     success = programmer.write_bytes(data, address)
                     if success:
-                        print("Запись выполнена через OpenOCD")
+                        logger.info("Запись выполнена через OpenOCD")
                     else:
                         last_error = "OpenOCD: запись не удалась"
                 else:
@@ -245,11 +246,11 @@ class BaseProgrammer:
             try:
                 from programmer_stlink import STLinkProgrammer
 
-                print("Попытка записи через прямой USB доступ (STLinkProgrammer)")
+                logger.info("Попытка записи через прямой USB доступ (STLinkProgrammer)")
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
                 if success:
-                    print("Запись выполнена через прямой USB доступ")
+                    logger.info("Запись выполнена через прямой USB доступ")
                 else:
                     last_error = "STLinkProgrammer: запись не удалась"
             except Exception as e:
@@ -260,17 +261,17 @@ class BaseProgrammer:
             return False
 
         if success:
-            print("Проверка записи...")
+            logger.info("Проверка записи...")
             verify_result = self._verify_write(data, address)
             if verify_result:
-                print("Проверка записи успешна")
+                logger.info("Проверка записи успешна")
                 return True
             else:
-                print("Предупреждение: запись выполнена, но проверка не прошла")
+                logger.warning("Предупреждение: запись выполнена, но проверка не прошла")
                 return True
 
         if last_error:
-            print(f"Ошибка записи: {last_error}")
+            logger.error(f"Ошибка записи: {last_error}")
         return False
 
     def _verify_write(self, expected_data, address):
@@ -428,14 +429,14 @@ class BaseProgrammer:
             raise ValueError(f"Ошибка при чтении: {e}")
 
         if response == expected_response:
-            print(f"Получен ответ от UART: {response.decode('utf-8', errors='replace')}")
+            logger.info(f"Получен ответ от UART: {response.decode('utf-8', errors='replace')}")
             return True
         else:
             display_response = (
                 response.decode("utf-8", errors="replace") if response else "нет ответа"
             )
-            print(
-                "Не получено ожидаемого ответа от UART. "
+            logger.warning(
+                f"Не получено ожидаемого ответа от UART. "
                 f"Ожидали '{expected_response.decode('utf-8')}', получили '{display_response}'."
             )
             return False

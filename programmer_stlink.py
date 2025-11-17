@@ -2,7 +2,10 @@ import usb.core
 import usb.util
 import time
 import struct
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class STLinkProgrammer:
@@ -220,21 +223,21 @@ class STLinkProgrammer:
 
     def write_bytes(self, data, address):
         if not self.usb_device or not self.interface:
-            print("Ошибка: USB устройство или интерфейс не инициализированы")
+            logger.error("Ошибка: USB устройство или интерфейс не инициализированы")
             return False
 
         try:
-            print("Проверка подключения к целевому устройству...")
+            logger.info("Проверка подключения к целевому устройству...")
             if not self._check_target_connection():
-                print("Ошибка: не удалось подключиться к целевому устройству")
+                logger.error("Ошибка: не удалось подключиться к целевому устройству")
                 return False
-            print("Подключение к целевому устройству установлено")
+            logger.info("Подключение к целевому устройству установлено")
 
-            print("Вход в режим отладки...")
+            logger.info("Вход в режим отладки...")
             if not self._enter_debug_mode():
-                print("Ошибка: не удалось войти в режим отладки")
+                logger.error("Ошибка: не удалось войти в режим отладки")
                 return False
-            print("Режим отладки активирован")
+            logger.info("Режим отладки активирован")
 
             time.sleep(0.1)
 
@@ -243,20 +246,20 @@ class STLinkProgrammer:
             offset = 0
             success = True
 
-            print(f"Начало записи {total_size} байт по адресу {hex(address)}")
+            logger.info(f"Начало записи {total_size} байт по адресу {hex(address)}")
 
             while offset < total_size:
                 block = data[offset : offset + block_size]
                 block_address = address + offset
 
-                print(
+                logger.debug(
                     f"Запись блока {offset // block_size + 1}/{(total_size + block_size - 1) // block_size}: "
                     f"{len(block)} байт по адресу {hex(block_address)}"
                 )
 
                 block_success = self._write_memory(block_address, block)
                 if not block_success:
-                    print(f"Ошибка записи блока по адресу {hex(block_address)}")
+                    logger.error(f"Ошибка записи блока по адресу {hex(block_address)}")
                     success = False
                     break
 
@@ -266,14 +269,14 @@ class STLinkProgrammer:
             self._exit_debug_mode()
 
             if success:
-                print("Запись завершена успешно")
+                logger.info("Запись завершена успешно")
             else:
-                print("Запись завершена с ошибками")
+                logger.error("Запись завершена с ошибками")
 
             return success
 
         except Exception as e:
-            print(f"Исключение при записи: {e}")
+            logger.exception(f"Исключение при записи: {e}")
             try:
                 self._exit_debug_mode()
             except:
