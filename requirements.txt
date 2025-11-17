@@ -1,5 +1,6 @@
 pyserial
 pyusb
+libusb-package
 # stlink
 # pystlink
 # py-stlink

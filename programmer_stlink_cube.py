@@ -12,16 +12,47 @@ class STLinkProgrammerCube:
         self.temp_dir = None
 
     def _find_cube_programmer(self):
+        import platform
 
         possible_paths = [
             "STM32_Programmer_CLI",
-            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32_Programmer_CLI",
-            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/STM32_Programmer_CLI",
-            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
-            "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/bin/STM32_Programmer_CLI",
-            "/usr/local/bin/STM32_Programmer_CLI",
-            "/opt/STM32CubeProgrammer/bin/STM32_Programmer_CLI",
+            "STM32_Programmer_CLI.exe",
         ]
+
+        if platform.system() == "Windows":
+            possible_paths.extend(
+                [
+                    r"C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe",
+                    r"C:\Program Files (x86)\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe",
+                    os.path.join(
+                        os.environ.get("ProgramFiles", ""),
+                        "STMicroelectronics",
+                        "STM32Cube",
+                        "STM32CubeProgrammer",
+                        "bin",
+                        "STM32_Programmer_CLI.exe",
+                    ),
+                    os.path.join(
+                        os.environ.get("ProgramFiles(x86)", ""),
+                        "STMicroelectronics",
+                        "STM32Cube",
+                        "STM32CubeProgrammer",
+                        "bin",
+                        "STM32_Programmer_CLI.exe",
+                    ),
+                ]
+            )
+
+        possible_paths.extend(
+            [
+                "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32_Programmer_CLI",
+                "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/STM32_Programmer_CLI",
+                "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOs/bin/STM32_Programmer_CLI",
+                "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/MacOS/bin/STM32_Programmer_CLI",
+                "/usr/local/bin/STM32_Programmer_CLI",
+                "/opt/STM32CubeProgrammer/bin/STM32_Programmer_CLI",
+            ]
+        )
 
         for path in possible_paths:
             try:
@@ -59,11 +90,15 @@ class STLinkProgrammerCube:
                 "1",
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
             if result.returncode == 0:
                 return True
             else:
+                if result.stderr:
+                    print(f"STM32CubeProgrammer stderr: {result.stderr}")
+                if result.stdout and "error" in result.stdout.lower():
+                    print(f"STM32CubeProgrammer stdout (ошибка): {result.stdout}")
                 return False
 
         except Exception as e:

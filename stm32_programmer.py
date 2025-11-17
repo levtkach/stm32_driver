@@ -1,3 +1,10 @@
+import sys
+import io
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 from programmer_base import BaseProgrammer
 from serial.tools import list_ports
 import serial
@@ -48,6 +55,8 @@ def main():
                     expected_response = f"SWICH_SWD1__2={target_mode}".encode("utf-8")
 
                     programmer.send_command_uart(command, expected_response)
+
+                    time.sleep(2)
             else:
                 print("Не удалось определить UART порт")
 
@@ -140,10 +149,7 @@ def _auto_select_serial_port(ports, selected_vid, selected_pid):
         return None
 
     known_serial_vid_pid = {
-        (0x1A86, 0x7523),  # CH340/CH341
-        # (0x10C4, 0xEA60),  # CP210x
-        # (0x0403, 0x6001),  # FTDI FT232R
-        # (0x0403, 0x6015),  # FTDI FT231X
+        (0x1A86, 0x7523),
     }
 
     def port_score(port):

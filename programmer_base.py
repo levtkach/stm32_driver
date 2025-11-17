@@ -1,5 +1,120 @@
 import usb.core
+import usb.backend.libusb1
+import usb.backend.libusb0
+import usb.backend.openusb
+import serial
 import time
+import os
+import sys
+
+
+def _init_usb_backend():
+    backend = None
+    try:
+        import libusb_package
+
+        backend = libusb_package.get_libusb1_backend()
+        if backend is not None:
+            return backend
+    except (ImportError, Exception):
+        pass
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            import ctypes.util
+
+            dll_names = ["libusb-1.0.dll", "libusb0.dll"]
+            dll_paths = []
+            stm32cube_paths = [
+                r"C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin",
+                r"C:\Program Files (x86)\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin",
+            ]
+
+            for dll_name in dll_names:
+                dll_path = ctypes.util.find_library(dll_name.replace(".dll", ""))
+                if dll_path:
+                    dll_paths.append(dll_path)
+
+                if os.path.exists(dll_name):
+                    dll_paths.append(os.path.abspath(dll_name))
+
+                system32_path = os.path.join(
+                    os.environ.get("SystemRoot", "C:\\Windows"), "System32", dll_name
+                )
+                if os.path.exists(system32_path):
+                    dll_paths.append(system32_path)
+
+                for cube_path in stm32cube_paths:
+                    if os.path.exists(cube_path):
+                        cube_dll = os.path.join(cube_path, dll_name)
+                        if os.path.exists(cube_dll):
+                            dll_paths.append(cube_dll)
+
+            if dll_paths:
+                try:
+                    backend = usb.backend.libusb1.get_backend(
+                        find_library=lambda x: dll_paths[0]
+                    )
+                    if backend is not None:
+                        return backend
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        backend = usb.backend.libusb1.get_backend()
+        if backend is not None:
+            return backend
+    except Exception:
+        pass
+
+    try:
+        backend = usb.backend.libusb0.get_backend()
+        if backend is not None:
+            return backend
+    except Exception:
+        pass
+
+    try:
+        backend = usb.backend.openusb.get_backend()
+        if backend is not None:
+            return backend
+    except Exception:
+        pass
+
+    stm32cube_bin = (
+        r"C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin"
+    )
+    cube_note = ""
+    if os.path.exists(stm32cube_bin):
+        cube_note = f"\n\nПримечание: Обнаружена установка STM32Cube в:\n   {stm32cube_bin}\n   Вы можете скопировать libusb-1.0.dll в эту директорию."
+
+    raise RuntimeError(
+        "USB backend недоступен.\n\n"
+        "Для исправления на Windows выполните следующие действия:\n"
+        "1. libusb-package уже установлен, но DLL отсутствует.\n"
+        "2. Скачайте libusb-1.0.dll вручную:\n"
+        "   - Перейдите на https://github.com/libusb/libusb/releases\n"
+        "   - Скачайте последнюю версию Windows binaries (libusb-1.0.XX-binaries.7z)\n"
+        "   - Распакуйте архив и скопируйте libusb-1.0.dll в одну из директорий:\n"
+        "     * Текущая директория проекта\n"
+        "     * C:\\Program Files\\STMicroelectronics\\STM32Cube\\STM32CubeProgrammer\\bin\n"
+        "     * Или запустите: python setup_libusb.py для инструкций\n"
+        "3. После установки DLL перезапустите Python окружение.\n\n"
+        "Альтернатива: используйте Zadig для установки WinUSB драйверов для вашего USB устройства."
+        + cube_note
+    )
+
+
+try:
+    backend = _init_usb_backend()
+    usb.core.find(backend=backend)
+except RuntimeError as e:
+    _backend_error = str(e)
+except Exception:
+    _backend_error = "Failed to initialize USB backend"
 
 
 STLINK_V2 = (0x0483, 0x3748)
@@ -22,16 +137,28 @@ class BaseProgrammer:
     def find_devices(self):
         self.devices = []
 
+        try:
+            backend = _init_usb_backend()
+        except RuntimeError as e:
+            raise RuntimeError(f"Ошибка USB backend: {e}")
+
         for vid, pid in STLINK_IDS:
-            if usb.core.find(idVendor=vid, idProduct=pid):
-                self.devices.append(
-                    {
-                        "type": "ST-Link",
-                        "name": f"ST-Link {vid:04X}:{pid:04X}",
-                        "vid": vid,
-                        "pid": pid,
-                    }
-                )
+            try:
+                if backend is not None:
+                    device = usb.core.find(idVendor=vid, idProduct=pid, backend=backend)
+                else:
+                    device = usb.core.find(idVendor=vid, idProduct=pid)
+                if device:
+                    self.devices.append(
+                        {
+                            "type": "ST-Link",
+                            "name": f"ST-Link {vid:04X}:{pid:04X}",
+                            "vid": vid,
+                            "pid": pid,
+                        }
+                    )
+            except Exception:
+                continue
 
         return self.devices
 
@@ -52,6 +179,7 @@ class BaseProgrammer:
 
         device_type = self.selected["type"]
         success = False
+        last_error = None
 
         if device_type == "ST-Link":
             lib_programmer = None
@@ -60,7 +188,10 @@ class BaseProgrammer:
 
                 lib_programmer = STLinkProgrammerLib(self.selected)
                 success = lib_programmer.write_bytes(data, address)
-            except Exception:
+                if success:
+                    print("Запись выполнена через STLinkProgrammerLib")
+            except Exception as e:
+                last_error = f"STLinkProgrammerLib: {e}"
                 success = False
             finally:
                 if lib_programmer is not None:
@@ -76,10 +207,19 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
+                    print(
+                        f"Попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
+                    )
                     success = programmer.write_bytes(data, address)
+                    if success:
+                        print("Запись выполнена через STM32CubeProgrammer")
+                    else:
+                        last_error = "STM32CubeProgrammer: запись не удалась"
                 else:
+                    last_error = "STM32CubeProgrammer: не найден"
                     success = False
-            except Exception:
+            except Exception as e:
+                last_error = f"STM32CubeProgrammer: {e}"
                 success = False
 
         if device_type == "ST-Link" and not success:
@@ -88,26 +228,49 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
+                    print(f"Попытка записи через OpenOCD: {programmer.openocd_path}")
                     success = programmer.write_bytes(data, address)
+                    if success:
+                        print("Запись выполнена через OpenOCD")
+                    else:
+                        last_error = "OpenOCD: запись не удалась"
                 else:
+                    last_error = "OpenOCD: не найден"
                     success = False
-            except Exception:
+            except Exception as e:
+                last_error = f"OpenOCD: {e}"
                 success = False
 
         if device_type == "ST-Link" and not success:
             try:
                 from programmer_stlink import STLinkProgrammer
 
+                print("Попытка записи через прямой USB доступ (STLinkProgrammer)")
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
-            except Exception:
+                if success:
+                    print("Запись выполнена через прямой USB доступ")
+                else:
+                    last_error = "STLinkProgrammer: запись не удалась"
+            except Exception as e:
+                last_error = f"STLinkProgrammer: {e}"
                 success = False
 
         if device_type != "ST-Link":
             return False
 
         if success:
-            return self._verify_write(data, address)
+            print("Проверка записи...")
+            verify_result = self._verify_write(data, address)
+            if verify_result:
+                print("Проверка записи успешна")
+                return True
+            else:
+                print("Предупреждение: запись выполнена, но проверка не прошла")
+                return True
+
+        if last_error:
+            print(f"Ошибка записи: {last_error}")
         return False
 
     def _verify_write(self, expected_data, address):
