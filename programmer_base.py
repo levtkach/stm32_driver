@@ -397,23 +397,10 @@ class BaseProgrammer:
         return data
 
     def send_command_uart(self, command, expected_response):
-        print(f"[UART] Отправка команды: {command}")
-        print(f"[UART] Ожидаемый ответ: {expected_response}")
-        
-        print(f"[UART] Очистка входного буфера...")
         self.selected_uart.reset_input_buffer()
-        if hasattr(self.selected_uart, 'in_waiting'):
-            print(f"[UART] Байт в буфере после очистки: {self.selected_uart.in_waiting}")
-        
-        print(f"[UART] Запись команды в порт...")
-        bytes_written = self.selected_uart.write(command)
-        print(f"[UART] Записано байт: {bytes_written}")
-        
-        print(f"[UART] Ожидание отправки данных...")
+        self.selected_uart.write(command)
         self.selected_uart.flush()
-        print(f"[UART] Данные отправлены")
-        
-        print(f"[UART] Ожидание ответа...")
+
         time.sleep(0.01)
         
         response = None
@@ -424,50 +411,31 @@ class BaseProgrammer:
         try:
             while (time.time() - start_time) < max_wait_time:
                 if self.selected_uart.in_waiting > 0:
-                    print(f"[UART] Доступно байт для чтения: {self.selected_uart.in_waiting}")
                     data = self.selected_uart.read(self.selected_uart.in_waiting)
                     if data:
                         buffer += data
-                        print(f"[UART] Прочитано байт: {len(data)}, всего в буфере: {len(buffer)}")
-                        text = data.decode('utf-8', errors='replace')
-                        print(f"[UART] Полученные данные: {repr(text)}")
-                        
                         if b'\n' in buffer or b'\r' in buffer:
-                            print(f"[UART] Обнаружен символ окончания строки")
                             break
                 
                 time.sleep(0.01)
             
             if buffer:
                 response = buffer.strip()
-                print(f"[UART] Финальный ответ (raw): {response}")
-                print(f"[UART] Финальный ответ (decoded): {response.decode('utf-8', errors='replace')}")
-            else:
-                print(f"[UART] Предупреждение: ответ не получен (буфер пуст)")
-                if hasattr(self.selected_uart, 'in_waiting'):
-                    print(f"[UART] Байт в буфере: {self.selected_uart.in_waiting}")
                     
         except serial.SerialException as read_error:
-            error_msg = f"Ошибка чтения ответа от UART: {read_error}"
-            print(f"[UART] ✗ ОШИБКА SerialException: {error_msg}")
-            print(f"[UART] Детали ошибки: тип={type(read_error).__name__}, сообщение={str(read_error)}")
-            raise ValueError(error_msg)
+            raise ValueError(f"Ошибка чтения ответа от UART: {read_error}")
         except Exception as e:
-            error_msg = f"Неожиданная ошибка при чтении: {e}"
-            print(f"[UART] ✗ ОШИБКА Exception: {error_msg}")
-            print(f"[UART] Тип ошибки: {type(e).__name__}")
-            raise ValueError(error_msg)
+            raise ValueError(f"Ошибка при чтении: {e}")
 
         if response == expected_response:
-            print(f"[UART] ✓ Получен корректный ответ от UART: {response.decode('utf-8', errors='replace')}")
+            print(f"Получен ответ от UART: {response.decode('utf-8', errors='replace')}")
             return True
         else:
             display_response = (
                 response.decode("utf-8", errors="replace") if response else "нет ответа"
             )
-            print(f"[UART] ✗ Не получено ожидаемого ответа от UART")
-            print(f"[UART] Ожидали: {expected_response.decode('utf-8')}")
-            print(f"[UART] Получили: {display_response}")
-            if response:
-                print(f"[UART] Сравнение (bytes): ожидали={expected_response}, получили={response}")
+            print(
+                "Не получено ожидаемого ответа от UART. "
+                f"Ожидали '{expected_response.decode('utf-8')}', получили '{display_response}'."
+            )
             return False
