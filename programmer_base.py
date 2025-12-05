@@ -261,13 +261,13 @@ class BaseProgrammer:
             return False
 
         if success:
-            logger.info("Проверка записи...")
+            logger.info("проверка записи...")
             verify_result = self._verify_write(data, address)
             if verify_result:
-                logger.info("Проверка записи успешна")
+                logger.info("проверка записи успешна")
                 return True
             else:
-                logger.warning("Предупреждение: запись выполнена, но проверка не прошла")
+                logger.warning("предупреждение: запись выполнена, но проверка не прошла")
                 return True
 
         if last_error:
@@ -282,42 +282,69 @@ class BaseProgrammer:
             read_size = len(expected_data) + 1024
 
             if device_type == "ST-Link":
+                logger.info(f"попытка чтения данных через STM32CubeProgrammer...")
                 try:
                     from programmer_stlink_cube import STLinkProgrammerCube
 
                     programmer = STLinkProgrammerCube(self.selected)
                     if programmer.cube_path:
+                        logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
                         read_data = programmer.read_bytes(read_size, address)
+                        if read_data:
+                            logger.info(f"прочитано {len(read_data)} байт через STM32CubeProgrammer")
+                        else:
+                            logger.warning("не удалось прочитать данные через STM32CubeProgrammer")
                     else:
                         read_data = b""
-                except:
+                        logger.warning("STM32CubeProgrammer не найден")
+                except Exception as e:
                     read_data = b""
+                    logger.warning(f"ошибка при чтении через STM32CubeProgrammer: {e}")
 
                 if not read_data:
+                    logger.info("попытка чтения данных через OpenOCD...")
                     try:
                         from programmer_stlink_openocd import STLinkProgrammerOpenOCD
 
                         programmer = STLinkProgrammerOpenOCD(self.selected)
                         if programmer.openocd_path:
+                            logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
                             read_data = programmer.read_bytes(
                                 read_size, address
                             )
-                    except:
+                            if read_data:
+                                logger.info(f"прочитано {len(read_data)} байт через OpenOCD")
+                            else:
+                                logger.warning("не удалось прочитать данные через OpenOCD")
+                        else:
+                            logger.warning("OpenOCD не найден")
+                    except Exception as e:
                         read_data = b""
+                        logger.warning(f"ошибка при чтении через OpenOCD: {e}")
 
                 if not read_data:
+                    logger.info("попытка чтения данных через прямой USB доступ...")
                     try:
                         from programmer_stlink import STLinkProgrammer
 
                         programmer = STLinkProgrammer(self.selected)
+                        logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
                         read_data = programmer.read_bytes(read_size, address)
-                    except:
+                        if read_data:
+                            logger.info(f"прочитано {len(read_data)} байт через прямой USB доступ")
+                        else:
+                            logger.warning("не удалось прочитать данные через прямой USB доступ")
+                    except Exception as e:
                         read_data = b""
+                        logger.warning(f"ошибка при чтении через прямой USB доступ: {e}")
 
                 if not read_data:
+                    logger.error("не удалось прочитать данные ни одним из методов")
+                    logger.error("проверка записи невозможна - данные не прочитаны")
                     return False
 
             if not read_data:
+                logger.error("данные не прочитаны, проверка невозможна")
                 return False
 
             while len(read_data) > 0 and read_data[-1] == 0xFF:
@@ -359,7 +386,7 @@ class BaseProgrammer:
             traceback_str = traceback.format_exc()
             
             logger.error("=" * 80)
-            logger.error("ОШИБКА ПРИ ПРОВЕРКЕ ЗАПИСИ:")
+            logger.error("ошибка при проверке записи:")
             logger.error(f"тип ошибки: {error_type}")
             logger.error(f"сообщение об ошибке: {error_message}")
             logger.error(f"адрес записи: {hex(address)}")
