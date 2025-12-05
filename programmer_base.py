@@ -278,13 +278,16 @@ class BaseProgrammer:
         try:
             device_type = self.selected["type"]
 
+            
+            read_size = len(expected_data) + 1024
+
             if device_type == "ST-Link":
                 try:
                     from programmer_stlink_cube import STLinkProgrammerCube
 
                     programmer = STLinkProgrammerCube(self.selected)
                     if programmer.cube_path:
-                        read_data = programmer.read_bytes(len(expected_data), address)
+                        read_data = programmer.read_bytes(read_size, address)
                     else:
                         read_data = b""
                 except:
@@ -297,7 +300,7 @@ class BaseProgrammer:
                         programmer = STLinkProgrammerOpenOCD(self.selected)
                         if programmer.openocd_path:
                             read_data = programmer.read_bytes(
-                                len(expected_data), address
+                                read_size, address
                             )
                     except:
                         read_data = b""
@@ -307,7 +310,7 @@ class BaseProgrammer:
                         from programmer_stlink import STLinkProgrammer
 
                         programmer = STLinkProgrammer(self.selected)
-                        read_data = programmer.read_bytes(len(expected_data), address)
+                        read_data = programmer.read_bytes(read_size, address)
                     except:
                         read_data = b""
 
@@ -317,12 +320,40 @@ class BaseProgrammer:
             if not read_data:
                 return False
 
-            if read_data == expected_data:
+            while len(read_data) > 0 and read_data[-1] == 0xFF:
+                read_data = read_data[:-1]
+
+            expected_preview = expected_data[:100]
+            read_preview = read_data[:100] if len(read_data) >= 100 else read_data
+            
+            logger.info("=" * 80)
+            logger.info("отладка проверки записи:")
+            logger.info(f"адрес записи: {hex(address)}")
+            logger.info(f"длина данных котрые хотели записать: {len(expected_data)} байт")
+            logger.info(f"длина данных после чтения      : {len(read_data)} байт")
+            logger.info(f"первые 100 байт ожидаемых данных    : {expected_preview.hex()}")
+            logger.info(f"первые 100 байт прочитанных данных  : {read_preview.hex()}")
+            
+
+            read_data_trimmed = read_data[:len(expected_data)]
+            
+            if read_data_trimmed == expected_data:
+                logger.info("проверка записи:  данные совпадают")
+                logger.info("=" * 80)
                 return True
             else:
+                logger.info("проверка записи: данные не совпадают")
+                for i in range(min(len(expected_data), len(read_data_trimmed))):
+                    if expected_data[i] != read_data_trimmed[i]:
+                        logger.info(f"первое несовпадение на позиции {i}: ожидали 0x{expected_data[i]:02X},  получили 0x{read_data_trimmed[i]:02X}")
+                        break
+                if len(read_data_trimmed) != len(expected_data):
+                    logger.info(f"д лины не совпадают: ожидали {len(expected_data)},  получили {len(read_data_trimmed)}")
+                logger.info("=" * 80)
                 return False
 
         except Exception as e:
+            logger.error(f"Ошибка при проверке записи: {e}")
             return False
 
     def clear_memory(self, address, size):
