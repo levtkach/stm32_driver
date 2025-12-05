@@ -192,7 +192,7 @@ class BaseProgrammer:
                 lib_programmer = STLinkProgrammerLib(self.selected)
                 success = lib_programmer.write_bytes(data, address)
                 if success:
-                    logger.info("Запись выполнена через STLinkProgrammerLib")
+                    logger.info("запись выполнена через STLinkProgrammerLib")
             except Exception as e:
                 last_error = f"STLinkProgrammerLib: {e}"
                 success = False
@@ -210,12 +210,14 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
-                    logger.info(f"Попытка записи через STM32CubeProgrammer: {programmer.cube_path}")
+                    logger.info(f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}")
+                    logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                     success = programmer.write_bytes(data, address)
                     if success:
-                        logger.info("Запись выполнена через STM32CubeProgrammer")
+                        logger.info("запись выполнена через STM32CubeProgrammer")
                     else:
                         last_error = "STM32CubeProgrammer: запись не удалась"
+                        logger.warning(f"запись через STM32CubeProgrammer не удалась")
                 else:
                     last_error = "STM32CubeProgrammer: не найден"
                     success = False
@@ -229,12 +231,14 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
-                    logger.info(f"Попытка записи через OpenOCD: {programmer.openocd_path}")
+                    logger.info(f"попытка записи через OpenOCD: {programmer.openocd_path}")
+                    logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                     success = programmer.write_bytes(data, address)
                     if success:
-                        logger.info("Запись выполнена через OpenOCD")
+                        logger.info("запись выполнена через OpenOCD")
                     else:
                         last_error = "OpenOCD: запись не удалась"
+                        logger.warning(f"запись через OpenOCD не удалась")
                 else:
                     last_error = "OpenOCD: не найден"
                     success = False
@@ -246,13 +250,15 @@ class BaseProgrammer:
             try:
                 from programmer_stlink import STLinkProgrammer
 
-                logger.info("Попытка записи через прямой USB доступ (STLinkProgrammer)")
+                logger.info("попытка записи через прямой USB доступ (STLinkProgrammer)")
+                logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
                 if success:
-                    logger.info("Запись выполнена через прямой USB доступ")
+                    logger.info("запись выполнена через прямой USB доступ")
                 else:
                     last_error = "STLinkProgrammer: запись не удалась"
+                    logger.warning(f"запись через прямой USB доступ не удалась")
             except Exception as e:
                 last_error = f"STLinkProgrammer: {e}"
                 success = False
@@ -262,6 +268,7 @@ class BaseProgrammer:
 
         if success:
             logger.info("проверка записи...")
+            time.sleep(0.5)
             verify_result = self._verify_write(data, address)
             if verify_result:
                 logger.info("проверка записи успешна")
@@ -271,7 +278,7 @@ class BaseProgrammer:
                 return True
 
         if last_error:
-            logger.error(f"Ошибка записи: {last_error}")
+            logger.error(f"ошибка записи: {last_error}")
         return False
 
     def _verify_write(self, expected_data, address):

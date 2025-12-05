@@ -174,12 +174,22 @@ class STLinkProgrammer:
                 + list(size_bytes)
                 + [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
             )
+            logger.info(f"отправка команды чтения памяти: адрес {hex(address)}, размер {size}")
             result = self._send_command(cmd)
 
-            if result and len(result) > 2:
-                return bytes(result[2 : 2 + size])
+            if result:
+                logger.info(f"получен ответ длиной {len(result)} байт")
+                if len(result) > 2:
+                    data = bytes(result[2 : 2 + size])
+                    logger.info(f"извлечено {len(data)} байт данных")
+                    return data
+                else:
+                    logger.warning(f"ответ слишком короткий: {len(result)} байт, ожидалось минимум 3")
+            else:
+                logger.warning("не получен ответ от команды чтения")
             return b""
-        except:
+        except Exception as e:
+            logger.warning(f"исключение в _read_memory: {e}")
             return b""
 
     def _write_memory(self, address, data):
@@ -284,7 +294,41 @@ class STLinkProgrammer:
             return False
 
     def read_bytes(self, size, address):
-        if not self.usb_device:
+        if not self.usb_device or not self.interface:
+            logger.warning("USB устройство или интерфейс не инициализированы, чтение невозможно")
+            return b""
+
+        try:
+            logger.info(f"проверка подключения к целевому устройству для чтения...")
+            if not self._check_target_connection():
+                logger.warning("не удалось подключиться к целевому устройству для чтения")
+                return b""
+            
+            logger.info("вход в режим отладки для чтения...")
+            if not self._enter_debug_mode():
+                logger.warning("не удалось войти в режим отладки для чтения")
+                return b""
+            
+            time.sleep(0.1)
+            
+            logger.info(f"чтение {size} байт с адреса {hex(address)}")
+            data = self._read_memory(address, size)
+            
+            if data:
+                logger.info(f"прочитано {len(data)} байт через прямой USB доступ")
+                self._exit_debug_mode()
+                return data
+            else:
+                logger.warning("не удалось прочитать данные через прямой USB доступ")
+                self._exit_debug_mode()
+                return b""
+                
+        except Exception as e:
+            logger.warning(f"исключение при чтении через прямой USB доступ: {e}")
+            try:
+                self._exit_debug_mode()
+            except:
+                pass
             return b""
 
     def clear_memory(self, address, size):

@@ -93,15 +93,22 @@ class STLinkProgrammerCube:
                 "1",
             ]
 
+            logger.info(f"выполнение команды записи: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
             if result.returncode == 0:
+                logger.info("команда записи завершилась с кодом 0 (успех)")
+                if result.stdout:
+                    logger.info(f"stdout при записи: {result.stdout[:1000]}")
+                if result.stderr:
+                    logger.info(f"stderr при записи: {result.stderr[:500]}")
                 return True
             else:
+                logger.warning(f"команда записи завершилась с кодом {result.returncode} (ошибка)")
                 if result.stderr:
                     logger.error(f"STM32CubeProgrammer stderr: {result.stderr}")
-                if result.stdout and "error" in result.stdout.lower():
-                    logger.error(f"STM32CubeProgrammer stdout (ошибка): {result.stdout}")
+                if result.stdout:
+                    logger.error(f"STM32CubeProgrammer stdout: {result.stdout}")
                 return False
 
         except Exception as e:
@@ -109,6 +116,7 @@ class STLinkProgrammerCube:
 
     def read_bytes(self, size, address):
         if not self.cube_path:
+            logger.warning("cube_path не найден, чтение невозможно")
             return b""
 
         try:
@@ -130,16 +138,28 @@ class STLinkProgrammerCube:
                 "1",
             ]
 
+            logger.info(f"выполнение команды чтения: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
-            if result.returncode == 0 and os.path.exists(read_file):
-                with open(read_file, "rb") as f:
-                    data = f.read()
-                return data
+            if result.returncode == 0:
+                if os.path.exists(read_file):
+                    with open(read_file, "rb") as f:
+                        data = f.read()
+                    logger.info(f"файл прочитан, размер: {len(data)} байт")
+                    return data
+                else:
+                    logger.warning(f"файл {read_file} не существует после чтения")
+                    return b""
             else:
+                logger.warning(f"команда чтения завершилась с кодом {result.returncode}")
+                if result.stderr:
+                    logger.warning(f"stderr: {result.stderr[:500]}")
+                if result.stdout:
+                    logger.warning(f"stdout: {result.stdout[:500]}")
                 return b""
 
         except Exception as e:
+            logger.warning(f"исключение при чтении: {e}")
             return b""
 
     def erase_flash(self):

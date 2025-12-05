@@ -2,7 +2,10 @@ import subprocess
 import time
 import os
 import tempfile
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class STLinkProgrammerOpenOCD:
@@ -122,17 +125,28 @@ set ENABLE_LOW_POWER 1
             write_command = (
                 f"reset run; sleep 1000; halt; flash write_image {data_file} {address}"
             )
+            logger.info(f"выполнение команды записи OpenOCD: {write_command}")
             stdout, stderr, returncode = self._send_openocd_command(write_command)
 
             if returncode != 0:
+                logger.warning(f"команда записи OpenOCD завершилась с кодом {returncode}")
+                if stderr:
+                    logger.warning(f"stderr: {stderr[:500]}")
+                if stdout:
+                    logger.warning(f"stdout: {stdout[:500]}")
                 return False
+            logger.info("команда записи OpenOCD завершилась успешно")
+            if stdout:
+                logger.info(f"stdout при записи: {stdout[:500]}")
             return True
 
         except Exception as e:
+            logger.warning(f"исключение при записи через OpenOCD: {e}")
             return False
 
     def read_bytes(self, size, address):
         if not self.openocd_path:
+            logger.warning("openocd_path не найден, чтение невозможно")
             return b""
 
         try:
@@ -144,18 +158,27 @@ set ENABLE_LOW_POWER 1
             combined_command = (
                 f"reset run; sleep 1000; halt; dump_image {read_file} {address} {size}"
             )
+            logger.info(f"выполнение команды OpenOCD: {combined_command}")
             stdout, stderr, returncode = self._send_openocd_command(combined_command)
             if returncode != 0:
+                logger.warning(f"команда OpenOCD завершилась с кодом {returncode}")
+                if stderr:
+                    logger.warning(f"stderr: {stderr[:500]}")
+                if stdout:
+                    logger.warning(f"stdout: {stdout[:500]}")
                 return b""
 
             if os.path.exists(read_file):
                 with open(read_file, "rb") as f:
                     data = f.read()
+                logger.info(f"файл прочитан через OpenOCD, размер: {len(data)} байт")
                 return data
             else:
+                logger.warning(f"файл {read_file} не существует после чтения через OpenOCD")
                 return b""
 
         except Exception as e:
+            logger.warning(f"исключение при чтении через OpenOCD: {e}")
             return b""
 
     def erase_flash(self):
