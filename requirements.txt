@@ -1,2 +1,9 @@
 pyserial
 pyusb
+<<<<<<< HEAD
+=======
+libusb-package
+# stlink
+# pystlink
+# py-stlink
+>>>>>>> win_version
