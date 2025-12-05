@@ -353,7 +353,40 @@ class BaseProgrammer:
                 return False
 
         except Exception as e:
-            logger.error(f"Ошибка при проверке записи: {e}")
+            import traceback
+            error_type = type(e).__name__
+            error_message = str(e)
+            traceback_str = traceback.format_exc()
+            
+            logger.error("=" * 80)
+            logger.error("ОШИБКА ПРИ ПРОВЕРКЕ ЗАПИСИ:")
+            logger.error(f"тип ошибки: {error_type}")
+            logger.error(f"сообщение об ошибке: {error_message}")
+            logger.error(f"адрес записи: {hex(address)}")
+            logger.error(f"размер данных для проверки: {len(expected_data)} байт")
+            if 'read_size' in locals():
+                logger.error(f"размер данных для чтения: {read_size} байт")
+            else:
+                logger.error("размер данных для чтения: не определен")
+            
+            if self.selected:
+                logger.error(f"выбранное устройство: {self.selected.get('name', 'неизвестно')}")
+                logger.error(f"VID: 0x{self.selected.get('vid', 0):04X}, PID: 0x{self.selected.get('pid', 0):04X}")
+            
+            if expected_data:
+                expected_preview = expected_data[:100]
+                logger.error(f"первые 100 байт ожидаемых данных (hex): {expected_preview.hex()}")
+            
+            if 'read_data' in locals() and read_data:
+                read_preview = read_data[:100] if len(read_data) >= 100 else read_data
+                logger.error(f"первые 100 байт прочитанных данных (hex): {read_preview.hex()}")
+                logger.error(f"длина прочитанных данных: {len(read_data)} байт")
+            
+            logger.error("трассировка стека:")
+            for line in traceback_str.strip().split('\n'):
+                logger.error(f"  {line}")
+            logger.error("=" * 80)
+            
             return False
 
     def clear_memory(self, address, size):
