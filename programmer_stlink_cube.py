@@ -99,12 +99,14 @@ class STLinkProgrammerCube:
             if result.returncode == 0:
                 logger.info("команда записи завершилась с кодом 0 (успех)")
                 if result.stdout:
-                    logger.info(f"stdout при записи: {result.stdout[:1000]}")
+                    logger.info(f"stdout при записи: {result.stdout}")
                 if result.stderr:
-                    logger.info(f"stderr при записи: {result.stderr[:500]}")
+                    logger.info(f"stderr при записи: {result.stderr}")
                 return True
             else:
-                logger.warning(f"команда записи завершилась с кодом {result.returncode} (ошибка)")
+                logger.warning(
+                    f"команда записи завершилась с кодом {result.returncode} (ошибка)"
+                )
                 if result.stderr:
                     logger.error(f"STM32CubeProgrammer stderr: {result.stderr}")
                 if result.stdout:
@@ -151,11 +153,13 @@ class STLinkProgrammerCube:
                     logger.warning(f"файл {read_file} не существует после чтения")
                     return b""
             else:
-                logger.warning(f"команда чтения завершилась с кодом {result.returncode}")
+                logger.warning(
+                    f"команда чтения завершилась с кодом {result.returncode}"
+                )
                 if result.stderr:
-                    logger.warning(f"stderr: {result.stderr[:500]}")
+                    logger.warning(f"stderr при чтении: {result.stderr}")
                 if result.stdout:
-                    logger.warning(f"stdout: {result.stdout[:500]}")
+                    logger.warning(f"stdout при чтении: {result.stdout}")
                 return b""
 
         except Exception as e:

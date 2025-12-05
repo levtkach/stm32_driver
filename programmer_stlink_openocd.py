@@ -129,15 +129,17 @@ set ENABLE_LOW_POWER 1
             stdout, stderr, returncode = self._send_openocd_command(write_command)
 
             if returncode != 0:
-                logger.warning(f"команда записи OpenOCD завершилась с кодом {returncode}")
+                logger.warning(
+                    f"команда записи OpenOCD завершилась с кодом {returncode}"
+                )
                 if stderr:
-                    logger.warning(f"stderr: {stderr[:500]}")
+                    logger.warning(f"stderr: {stderr}")
                 if stdout:
-                    logger.warning(f"stdout: {stdout[:500]}")
+                    logger.warning(f"stdout: {stdout}")
                 return False
             logger.info("команда записи OpenOCD завершилась успешно")
             if stdout:
-                logger.info(f"stdout при записи: {stdout[:500]}")
+                logger.info(f"stdout при записи: {stdout}")
             return True
 
         except Exception as e:
@@ -163,9 +165,9 @@ set ENABLE_LOW_POWER 1
             if returncode != 0:
                 logger.warning(f"команда OpenOCD завершилась с кодом {returncode}")
                 if stderr:
-                    logger.warning(f"stderr: {stderr[:500]}")
+                    logger.warning(f"stderr при чтении: {stderr}")
                 if stdout:
-                    logger.warning(f"stdout: {stdout[:500]}")
+                    logger.warning(f"stdout при чтении: {stdout}")
                 return b""
 
             if os.path.exists(read_file):
@@ -174,7 +176,9 @@ set ENABLE_LOW_POWER 1
                 logger.info(f"файл прочитан через OpenOCD, размер: {len(data)} байт")
                 return data
             else:
-                logger.warning(f"файл {read_file} не существует после чтения через OpenOCD")
+                logger.warning(
+                    f"файл {read_file} не существует после чтения через OpenOCD"
+                )
                 return b""
 
         except Exception as e:

@@ -210,7 +210,9 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
-                    logger.info(f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}")
+                    logger.info(
+                        f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
+                    )
                     logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                     success = programmer.write_bytes(data, address)
                     if success:
@@ -231,7 +233,9 @@ class BaseProgrammer:
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
-                    logger.info(f"попытка записи через OpenOCD: {programmer.openocd_path}")
+                    logger.info(
+                        f"попытка записи через OpenOCD: {programmer.openocd_path}"
+                    )
                     logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                     success = programmer.write_bytes(data, address)
                     if success:
@@ -268,13 +272,15 @@ class BaseProgrammer:
 
         if success:
             logger.info("проверка записи...")
-            time.sleep(0.5)
+            time.sleep(1.0)
             verify_result = self._verify_write(data, address)
             if verify_result:
                 logger.info("проверка записи успешна")
                 return True
             else:
-                logger.warning("предупреждение: запись выполнена, но проверка не прошла")
+                logger.warning(
+                    "предупреждение: запись выполнена, но проверка не прошла"
+                )
                 return True
 
         if last_error:
@@ -285,7 +291,6 @@ class BaseProgrammer:
         try:
             device_type = self.selected["type"]
 
-            
             read_size = len(expected_data) + 1024
 
             if device_type == "ST-Link":
@@ -298,9 +303,13 @@ class BaseProgrammer:
                         logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
                         read_data = programmer.read_bytes(read_size, address)
                         if read_data:
-                            logger.info(f"прочитано {len(read_data)} байт через STM32CubeProgrammer")
+                            logger.info(
+                                f"прочитано {len(read_data)} байт через STM32CubeProgrammer"
+                            )
                         else:
-                            logger.warning("не удалось прочитать данные через STM32CubeProgrammer")
+                            logger.warning(
+                                "не удалось прочитать данные через STM32CubeProgrammer"
+                            )
                     else:
                         read_data = b""
                         logger.warning("STM32CubeProgrammer не найден")
@@ -315,14 +324,18 @@ class BaseProgrammer:
 
                         programmer = STLinkProgrammerOpenOCD(self.selected)
                         if programmer.openocd_path:
-                            logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
-                            read_data = programmer.read_bytes(
-                                read_size, address
+                            logger.info(
+                                f"чтение {read_size} байт с адреса {hex(address)}"
                             )
+                            read_data = programmer.read_bytes(read_size, address)
                             if read_data:
-                                logger.info(f"прочитано {len(read_data)} байт через OpenOCD")
+                                logger.info(
+                                    f"прочитано {len(read_data)} байт через OpenOCD"
+                                )
                             else:
-                                logger.warning("не удалось прочитать данные через OpenOCD")
+                                logger.warning(
+                                    "не удалось прочитать данные через OpenOCD"
+                                )
                         else:
                             logger.warning("OpenOCD не найден")
                     except Exception as e:
@@ -338,12 +351,18 @@ class BaseProgrammer:
                         logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
                         read_data = programmer.read_bytes(read_size, address)
                         if read_data:
-                            logger.info(f"прочитано {len(read_data)} байт через прямой USB доступ")
+                            logger.info(
+                                f"прочитано {len(read_data)} байт через прямой USB доступ"
+                            )
                         else:
-                            logger.warning("не удалось прочитать данные через прямой USB доступ")
+                            logger.warning(
+                                "не удалось прочитать данные через прямой USB доступ"
+                            )
                     except Exception as e:
                         read_data = b""
-                        logger.warning(f"ошибка при чтении через прямой USB доступ: {e}")
+                        logger.warning(
+                            f"ошибка при чтении через прямой USB доступ: {e}"
+                        )
 
                 if not read_data:
                     logger.error("не удалось прочитать данные ни одним из методов")
@@ -359,18 +378,21 @@ class BaseProgrammer:
 
             expected_preview = expected_data[:100]
             read_preview = read_data[:100] if len(read_data) >= 100 else read_data
-            
+
             logger.info("=" * 80)
             logger.info("отладка проверки записи:")
             logger.info(f"адрес записи: {hex(address)}")
-            logger.info(f"длина данных котрые хотели записать: {len(expected_data)} байт")
+            logger.info(
+                f"длина данных котрые хотели записать: {len(expected_data)} байт"
+            )
             logger.info(f"длина данных после чтения      : {len(read_data)} байт")
-            logger.info(f"первые 100 байт ожидаемых данных    : {expected_preview.hex()}")
+            logger.info(
+                f"первые 100 байт ожидаемых данных    : {expected_preview.hex()}"
+            )
             logger.info(f"первые 100 байт прочитанных данных  : {read_preview.hex()}")
-            
 
-            read_data_trimmed = read_data[:len(expected_data)]
-            
+            read_data_trimmed = read_data[: len(expected_data)]
+
             if read_data_trimmed == expected_data:
                 logger.info("проверка записи:  данные совпадают")
                 logger.info("=" * 80)
@@ -379,48 +401,61 @@ class BaseProgrammer:
                 logger.info("проверка записи: данные не совпадают")
                 for i in range(min(len(expected_data), len(read_data_trimmed))):
                     if expected_data[i] != read_data_trimmed[i]:
-                        logger.info(f"первое несовпадение на позиции {i}: ожидали 0x{expected_data[i]:02X},  получили 0x{read_data_trimmed[i]:02X}")
+                        logger.info(
+                            f"первое несовпадение на позиции {i}: ожидали 0x{expected_data[i]:02X},  получили 0x{read_data_trimmed[i]:02X}"
+                        )
                         break
                 if len(read_data_trimmed) != len(expected_data):
-                    logger.info(f"д лины не совпадают: ожидали {len(expected_data)},  получили {len(read_data_trimmed)}")
+                    logger.info(
+                        f"д лины не совпадают: ожидали {len(expected_data)},  получили {len(read_data_trimmed)}"
+                    )
                 logger.info("=" * 80)
                 return False
 
         except Exception as e:
             import traceback
+
             error_type = type(e).__name__
             error_message = str(e)
             traceback_str = traceback.format_exc()
-            
+
             logger.error("=" * 80)
             logger.error("ошибка при проверке записи:")
             logger.error(f"тип ошибки: {error_type}")
             logger.error(f"сообщение об ошибке: {error_message}")
             logger.error(f"адрес записи: {hex(address)}")
             logger.error(f"размер данных для проверки: {len(expected_data)} байт")
-            if 'read_size' in locals():
+            if "read_size" in locals():
                 logger.error(f"размер данных для чтения: {read_size} байт")
             else:
                 logger.error("размер данных для чтения: не определен")
-            
+
             if self.selected:
-                logger.error(f"выбранное устройство: {self.selected.get('name', 'неизвестно')}")
-                logger.error(f"VID: 0x{self.selected.get('vid', 0):04X}, PID: 0x{self.selected.get('pid', 0):04X}")
-            
+                logger.error(
+                    f"выбранное устройство: {self.selected.get('name', 'неизвестно')}"
+                )
+                logger.error(
+                    f"VID: 0x{self.selected.get('vid', 0):04X}, PID: 0x{self.selected.get('pid', 0):04X}"
+                )
+
             if expected_data:
                 expected_preview = expected_data[:100]
-                logger.error(f"первые 100 байт ожидаемых данных (hex): {expected_preview.hex()}")
-            
-            if 'read_data' in locals() and read_data:
+                logger.error(
+                    f"первые 100 байт ожидаемых данных (hex): {expected_preview.hex()}"
+                )
+
+            if "read_data" in locals() and read_data:
                 read_preview = read_data[:100] if len(read_data) >= 100 else read_data
-                logger.error(f"первые 100 байт прочитанных данных (hex): {read_preview.hex()}")
+                logger.error(
+                    f"первые 100 байт прочитанных данных (hex): {read_preview.hex()}"
+                )
                 logger.error(f"длина прочитанных данных: {len(read_data)} байт")
-            
+
             logger.error("трассировка стека:")
-            for line in traceback_str.strip().split('\n'):
+            for line in traceback_str.strip().split("\n"):
                 logger.error(f"  {line}")
             logger.error("=" * 80)
-            
+
             return False
 
     def clear_memory(self, address, size):
@@ -496,45 +531,66 @@ class BaseProgrammer:
         return data
 
     def send_command_uart(self, command, expected_response):
+        import sys
+
         self.selected_uart.reset_input_buffer()
+
         self.selected_uart.write(command)
         self.selected_uart.flush()
 
         time.sleep(0.01)
-        
+
         response = None
         buffer = b""
-        max_wait_time = 2.0
+
+        max_wait_time = 3.0 if sys.platform == "win32" else 2.0
         start_time = time.time()
-        
+
         try:
+
             while (time.time() - start_time) < max_wait_time:
                 if self.selected_uart.in_waiting > 0:
+
                     data = self.selected_uart.read(self.selected_uart.in_waiting)
                     if data:
                         buffer += data
-                        if b'\n' in buffer or b'\r' in buffer:
+
+                        if b"\n" in buffer or b"\r" in buffer:
                             break
-                
+
+                        if expected_response in buffer:
+                            break
+
                 time.sleep(0.01)
-            
+
             if buffer:
+
                 response = buffer.strip()
-                    
+
+                response = response.rstrip(b"\r\n").rstrip(b"\n\r")
+
         except serial.SerialException as read_error:
-            raise ValueError(f"Ошибка чтения ответа от UART: {read_error}")
+            logger.warning(f"ошибка чтения ответа от UART: {read_error}")
+            return False
         except Exception as e:
-            raise ValueError(f"Ошибка при чтении: {e}")
+            logger.warning(f"ошибка при чтении: {e}")
+            return False
 
         if response == expected_response:
-            logger.info(f"Получен ответ от UART: {response.decode('utf-8', errors='replace')}")
+            logger.info(
+                f"получен ответ от UART: {response.decode('utf-8', errors='replace')}"
+            )
             return True
         else:
             display_response = (
                 response.decode("utf-8", errors="replace") if response else "нет ответа"
             )
             logger.warning(
-                f"Не получено ожидаемого ответа от UART. "
-                f"Ожидали '{expected_response.decode('utf-8')}', получили '{display_response}'."
+                f"не получено ожидаемого ответа от UART. "
+                f"ожидали '{expected_response.decode('utf-8')}', получили '{display_response}'."
             )
+
+            if sys.platform == "win32" and response:
+                logger.warning(f"сырой ответ (hex): {response.hex()}")
+                logger.warning(f"ожидаемый ответ (hex): {expected_response.hex()}")
             return False

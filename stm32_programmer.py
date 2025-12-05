@@ -8,10 +8,8 @@ if sys.platform == "win32":
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +23,7 @@ import time
 
 def connect_to_uart_port(port_name, baudrate=115200):
     try:
+
         serial_port = serial.Serial(
             port=port_name,
             baudrate=baudrate,
@@ -34,18 +33,18 @@ def connect_to_uart_port(port_name, baudrate=115200):
             timeout=1,
             xonxoff=False,
             rtscts=False,
-            dsrdtr=False
+            dsrdtr=False,
         )
-        
+
         serial_port.dtr = False
         serial_port.rts = False
-        
+
         if serial_port.is_open:
             logger.info(f"[UART] подключено к {port_name}")
             return serial_port
         else:
             raise serial.SerialException(f"Не удалось открыть {port_name}")
-            
+
     except serial.SerialException as e:
         raise serial.SerialException(f"Ошибка подключения к {port_name}: {e}")
     except Exception as e:
@@ -66,7 +65,7 @@ def main():
 """
     print(banner)
     logger.info("программа запущена")
-    
+
     programmer = BaseProgrammer()
 
     devices = programmer.find_devices()
@@ -89,13 +88,15 @@ def main():
             "SET EN_12V=ON\n".encode("utf-8"), "EN_12V=ON".encode("utf-8")
         )
         time.sleep(1)
-        for target_mode in ("HV", "LV"):
+        for target_mode in ("LV", "HV"):
 
             if uart_port:
                 logger.info(f"Выбран UART порт: {uart_port}")
                 if programmer.selected_uart is None:
                     try:
-                        programmer.selected_uart = connect_to_uart_port(uart_port, baudrate=115200)
+                        programmer.selected_uart = connect_to_uart_port(
+                            uart_port, baudrate=115200
+                        )
                         logger.info(f"Открыто UART подключение на порту {uart_port}")
                     except serial.SerialException as e:
                         raise ValueError(
@@ -151,6 +152,20 @@ def main():
             )
 
             logger.info(f"Результат: {'успех' if success else 'ошибка'}")
+
+            if target_mode == "LV":
+                logger.info("ожидание стабилизации устройства после записи LV...")
+                time.sleep(3)
+
+                logger.info("переподключение к устройству...")
+                devices = programmer.find_devices()
+                if devices:
+                    if not programmer.select_device(1):
+                        logger.warning("не удалось переподключиться к устройству")
+                    else:
+                        logger.info("устройство переподключено")
+                else:
+                    logger.warning("устройство не найдено для переподключения")
     except Exception as e:
         raise ValueError(f"Ошибка: {e}")
 
