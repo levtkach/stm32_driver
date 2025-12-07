@@ -1,15 +1,31 @@
 import sys
 import io
 import logging
+from datetime import datetime
+from pathlib import Path
 
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+# Создаем директорию для логов
+log_dir = Path(__file__).resolve().parent / "logs"
+log_dir.mkdir(exist_ok=True)
+
+# Создаем имя файла на основе даты и времени
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+log_filename = log_dir / f"{timestamp}.log"
+
+# Настраиваем логирование с выводом в консоль и файл
+handlers = [
+    logging.StreamHandler(sys.stdout),
+    logging.FileHandler(log_filename, encoding="utf-8"),
+]
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=handlers,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +80,7 @@ def main():
 ================================================================================
 """
     print(banner)
-    logger.info("программа запущена")
+    logger.warning(f"Логи записываются в файл: {log_filename}")
 
     programmer = BaseProgrammer()
 
