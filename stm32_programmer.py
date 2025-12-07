@@ -148,7 +148,7 @@ def main():
                     f"Прошивка рассчитана на {hex(firmware_start)}, выбрано {hex(selected_address)}."
                 )
 
-            logger.info(
+            logger.error(
                 f"Запись прошивки {firmware_path.name} размером {len(firmware_data)} байт "
                 f"в {selected_description} (адрес {hex(selected_address)})..."
             )
@@ -156,7 +156,10 @@ def main():
             success = programmer.write_bytes(firmware_data, selected_address)
 
             if not success:
-                raise ValueError(f"Ошибка записи для {target_mode}")
+                logger.error(f"Ошибка записи для режима {target_mode}")
+                print(f"\n❌ ОШИБКА: Не удалось записать прошивку для режима {target_mode}")
+                print("Проверьте подключение устройства и попробуйте снова.")
+                return
 
             programmer.send_command_uart(
                 "SET EN_12V=OFF\n".encode("utf-8"), "EN_12V=OFF".encode("utf-8")
@@ -167,23 +170,37 @@ def main():
                 "SET EN_12V=ON\n".encode("utf-8"), "EN_12V=ON".encode("utf-8")
             )
 
-            logger.info(f"Результат: {'успех' if success else 'ошибка'}")
+            logger.warning(f"Результат записи для {target_mode}: успех")
+            print(f"✅ Прошивка для режима {target_mode} успешно записана")
 
             if target_mode == "LV":
-                logger.info("ожидание стабилизации устройства после записи LV...")
+                logger.warning("ожидание стабилизации устройства после записи LV...")
                 time.sleep(3)
 
-                logger.info("переподключение к устройству...")
+                logger.warning("переподключение к устройству...")
                 devices = programmer.find_devices()
                 if devices:
                     if not programmer.select_device(1):
                         logger.warning("не удалось переподключиться к устройству")
                     else:
-                        logger.info("устройство переподключено")
+                        logger.warning("устройство переподключено")
                 else:
                     logger.warning("устройство не найдено для переподключения")
+    
+    print("\n✅ Программа успешно завершена")
+    logger.warning("Программа успешно завершена")
     except Exception as e:
-        raise ValueError(f"Ошибка: {e}")
+        import traceback
+        logger.error("=" * 80)
+        logger.error(f"Критическая ошибка: {type(e).__name__}")
+        logger.error(f"Сообщение: {str(e)}")
+        logger.error("Трассировка стека:")
+        for line in traceback.format_exc().strip().split("\n"):
+            logger.error(f"  {line}")
+        logger.error("=" * 80)
+        print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
+        print("Подробности записаны в лог файл.")
+        return
 
 
 def detect_serial_port(selected_device):
