@@ -186,9 +186,6 @@ def main():
                         logger.warning("устройство переподключено")
                 else:
                     logger.warning("устройство не найдено для переподключения")
-    
-    print("\n✅ Программа успешно завершена")
-    logger.warning("Программа успешно завершена")
     except Exception as e:
         import traceback
         logger.error("=" * 80)
@@ -201,6 +198,9 @@ def main():
         print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
         print("Подробности записаны в лог файл.")
         return
+    
+    print("\n✅ Программа успешно завершена")
+    logger.warning("Программа успешно завершена")
 
 
 def detect_serial_port(selected_device):
