@@ -125,7 +125,20 @@ def main():
 
                     programmer.send_command_uart(command, expected_response)
 
-                    time.sleep(2)
+                    logger.warning(f"Переключение в режим {target_mode}, ожидание стабилизации...")
+                    time.sleep(3)  # Увеличена задержка для стабилизации после переключения режима
+                    
+                    # Повторный поиск и выбор устройства после переключения режима
+                    logger.warning("Повторный поиск устройства после переключения режима...")
+                    devices = programmer.find_devices()
+                    if devices:
+                        if not programmer.select_device(1):
+                            logger.warning("не удалось перевыбрать устройство после переключения режима")
+                        else:
+                            logger.warning("устройство перевыбрано после переключения режима")
+                            time.sleep(1)  # Дополнительная задержка перед записью
+                    else:
+                        logger.warning("устройство не найдено после переключения режима")
             else:
                 logger.warning("Не удалось определить UART порт")
 
