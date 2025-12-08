@@ -99,8 +99,6 @@ class STLinkProgrammerCube:
                 connection_param,
                 "-ob",
                 "nRST_STOP=1",
-                "-v",
-                "1",
             ]
             
             logger.info(f"проверка подключения к устройству перед записью...")
@@ -119,8 +117,6 @@ class STLinkProgrammerCube:
                 "-c",
                 connection_param,
                 "-rst",
-                "-v",
-                "1",
             ]
             logger.info(f"выполнение команды сброса перед записью: {' '.join(reset_cmd)}")
             
@@ -157,7 +153,6 @@ class STLinkProgrammerCube:
                 f"{data_file}",
                 f"0x{address:08X}",
                 "-v",
-                "1",
             ]
 
             max_retries = 3
@@ -254,7 +249,7 @@ class STLinkProgrammerCube:
 
         try:
             connection_param = self._build_connection_param()
-            cmd = [self.cube_path, "-c", connection_param, "-e", "all", "-v", "1"]
+            cmd = [self.cube_path, "-c", connection_param, "-e", "all"]
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
@@ -272,7 +267,7 @@ class STLinkProgrammerCube:
 
         try:
             connection_param = self._build_connection_param()
-            cmd = [self.cube_path, "-c", connection_param, "-rst", "-v", "1"]
+            cmd = [self.cube_path, "-c", connection_param, "-rst"]
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
