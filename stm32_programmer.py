@@ -184,6 +184,8 @@ def main():
                         logger.warning("не удалось переподключиться к устройству")
                     else:
                         logger.warning("устройство переподключено")
+                        # Дополнительная задержка для стабилизации перед записью HV
+                        time.sleep(2)
                 else:
                     logger.warning("устройство не найдено для переподключения")
     except Exception as e:

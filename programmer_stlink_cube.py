@@ -128,16 +128,16 @@ class STLinkProgrammerCube:
 
             read_file = os.path.join(self.temp_dir, "read.bin")
 
+            # Формат команды: -r <file> <address> <size>
+            # address в hex, size в десятичном формате
             cmd = [
                 self.cube_path,
                 "-c",
                 "port=SWD",
                 "-r",
-                f"{read_file}",
+                read_file,
                 f"0x{address:08X}",
-                f"{size}",
-                "-v",
-                "1",
+                str(size),
             ]
 
             logger.info(f"выполнение команды чтения: {' '.join(cmd)}")
