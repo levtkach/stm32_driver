@@ -13,6 +13,15 @@ class STLinkProgrammerCube:
         self.device = device
         self.cube_path = self._find_cube_programmer()
         self.temp_dir = None
+        self.stlink_serial = device.get("serial")
+    
+    def _build_connection_param(self):
+        if self.stlink_serial:
+            param = f"port=SWD sn={self.stlink_serial}"
+            logger.debug(f"Используется ST-Link с серийным номером: {self.stlink_serial}")
+            return param
+        logger.debug("Используется ST-Link без указания серийного номера")
+        return "port=SWD"
 
     def _find_cube_programmer(self):
         import platform
@@ -82,10 +91,68 @@ class STLinkProgrammerCube:
             with open(data_file, "wb") as f:
                 f.write(data)
 
+            time.sleep(1.0)
+            connection_param = self._build_connection_param()
+            connect_test_cmd = [
+                self.cube_path,
+                "-c",
+                connection_param,
+                "-ob",
+                "nRST_STOP=1",
+                "-v",
+                "1",
+            ]
+            
+            logger.info(f"проверка подключения к устройству перед записью...")
+            connect_result = subprocess.run(connect_test_cmd, capture_output=True, text=True, timeout=30)
+            
+            if connect_result.returncode != 0:
+                if connect_result.stdout and "DEV_USB_COMM_ERR" in connect_result.stdout:
+                    logger.warning("обнаружена ошибка USB коммуникации, ожидание дополнительной стабилизации...")
+                    time.sleep(3.0)
+                else:
+                    logger.warning("подключение не удалось, ожидание...")
+                    time.sleep(2.0)
+            
+            reset_cmd = [
+                self.cube_path,
+                "-c",
+                connection_param,
+                "-rst",
+                "-v",
+                "1",
+            ]
+            logger.info(f"выполнение команды сброса перед записью: {' '.join(reset_cmd)}")
+            
+            reset_success = False
+            reset_result = None
+            for reset_attempt in range(3):
+                if reset_attempt > 0:
+                    logger.warning(f"повторная попытка сброса (попытка {reset_attempt + 1}/3)...")
+                    time.sleep(2.0)
+                
+                reset_result = subprocess.run(reset_cmd, capture_output=True, text=True, timeout=30)
+                if reset_result.returncode == 0:
+                    logger.info("устройство сброшено перед записью")
+                    time.sleep(1.0)
+                    reset_success = True
+                    break
+                else:
+                    if reset_attempt < 2:
+                        logger.warning(f"попытка сброса {reset_attempt + 1} не удалась, повтор...")
+            
+            if not reset_success:
+                logger.warning("не удалось сбросить устройство перед записью, продолжаем без сброса...")
+                if reset_result and reset_result.stdout:
+                    logger.warning(f"stdout при сбросе: {reset_result.stdout}")
+                if reset_result and reset_result.stderr:
+                    logger.warning(f"stderr при сбросе: {reset_result.stderr}")
+                time.sleep(2.0)
+
             cmd = [
                 self.cube_path,
                 "-c",
-                "port=SWD",
+                connection_param,
                 "-w",
                 f"{data_file}",
                 f"0x{address:08X}",
@@ -93,25 +160,41 @@ class STLinkProgrammerCube:
                 "1",
             ]
 
-            logger.info(f"выполнение команды записи: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            max_retries = 3
+            retry_delay = 3.0
+            
+            for attempt in range(max_retries):
+                if attempt > 0:
+                    logger.warning(f"повторная попытка записи (попытка {attempt + 1}/{max_retries})...")
+                    time.sleep(retry_delay)
+                    
+                    reset_result = subprocess.run(reset_cmd, capture_output=True, text=True, timeout=30)
+                    if reset_result.returncode == 0:
+                        time.sleep(0.5)
 
-            if result.returncode == 0:
-                logger.info("команда записи завершилась с кодом 0 (успех)")
-                if result.stdout:
-                    logger.info(f"stdout при записи: {result.stdout}")
-                if result.stderr:
-                    logger.info(f"stderr при записи: {result.stderr}")
-                return True
-            else:
-                logger.warning(
-                    f"команда записи завершилась с кодом {result.returncode} (ошибка)"
-                )
-                if result.stderr:
-                    logger.error(f"STM32CubeProgrammer stderr: {result.stderr}")
-                if result.stdout:
-                    logger.error(f"STM32CubeProgrammer stdout: {result.stdout}")
-                return False
+                logger.info(f"выполнение команды записи: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode == 0:
+                    logger.info("команда записи завершилась с кодом 0 (успех)")
+                    if result.stdout:
+                        logger.info(f"stdout при записи: {result.stdout}")
+                    if result.stderr:
+                        logger.info(f"stderr при записи: {result.stderr}")
+                    return True
+                else:
+                    logger.warning(
+                        f"команда записи завершилась с кодом {result.returncode} (ошибка, попытка {attempt + 1}/{max_retries})"
+                    )
+                    if result.stderr:
+                        logger.error(f"STM32CubeProgrammer stderr: {result.stderr}")
+                    if result.stdout:
+                        logger.error(f"STM32CubeProgrammer stdout: {result.stdout}")
+                    
+                    if attempt < max_retries - 1:
+                        continue
+            
+            return False
 
         except Exception as e:
             return False
@@ -128,16 +211,15 @@ class STLinkProgrammerCube:
 
             read_file = os.path.join(self.temp_dir, "read.bin")
 
-            # Формат команды: -r <file> <address> <size>
-            # address в hex, size в десятичном формате
+            connection_param = self._build_connection_param()
             cmd = [
                 self.cube_path,
                 "-c",
-                "port=SWD",
+                connection_param,
                 "-r",
-                read_file,
                 f"0x{address:08X}",
                 str(size),
+                read_file,
             ]
 
             logger.info(f"выполнение команды чтения: {' '.join(cmd)}")
@@ -171,8 +253,8 @@ class STLinkProgrammerCube:
             return False
 
         try:
-
-            cmd = [self.cube_path, "-c", "port=SWD", "-e", "all", "-v", "1"]
+            connection_param = self._build_connection_param()
+            cmd = [self.cube_path, "-c", connection_param, "-e", "all", "-v", "1"]
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
@@ -189,8 +271,8 @@ class STLinkProgrammerCube:
             return False
 
         try:
-
-            cmd = [self.cube_path, "-c", "port=SWD", "-rst", "-v", "1"]
+            connection_param = self._build_connection_param()
+            cmd = [self.cube_path, "-c", connection_param, "-rst", "-v", "1"]
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 

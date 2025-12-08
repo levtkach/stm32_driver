@@ -8,24 +8,21 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-# Создаем директорию для логов
 log_dir = Path(__file__).resolve().parent / "logs"
 log_dir.mkdir(exist_ok=True)
 
-# Создаем имя файла на основе даты и времени
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_filename = log_dir / f"{timestamp}.log"
+file_handler = logging.FileHandler(log_filename, encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
 
-# Настраиваем логирование с выводом в консоль и файл
-handlers = [
-    logging.StreamHandler(sys.stdout),
-    logging.FileHandler(log_filename, encoding="utf-8"),
-]
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.ERROR)
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=handlers,
+    handlers=[file_handler, console_handler],
 )
 
 logger = logging.getLogger(__name__)
@@ -68,19 +65,8 @@ def connect_to_uart_port(port_name, baudrate=115200):
 
 
 def main():
-    banner = """
-================================================================================
-================================================================================
-================================================================================
-                                                                                
-                        ПРОГРАММА ЗАПУЩЕНА                                      
-                                                                                
-================================================================================
-================================================================================
-================================================================================
-"""
-    print(banner)
     logger.warning(f"Логи записываются в файл: {log_filename}")
+    print("Запуск программы...")
 
     programmer = BaseProgrammer()
 
@@ -126,19 +112,35 @@ def main():
                     programmer.send_command_uart(command, expected_response)
 
                     logger.warning(f"Переключение в режим {target_mode}, ожидание стабилизации...")
-                    time.sleep(3)  # Увеличена задержка для стабилизации после переключения режима
+                    stabilization_time = 5 if target_mode == "HV" else 5
+                    time.sleep(stabilization_time)
                     
-                    # Повторный поиск и выбор устройства после переключения режима
                     logger.warning("Повторный поиск устройства после переключения режима...")
-                    devices = programmer.find_devices()
-                    if devices:
-                        if not programmer.select_device(1):
-                            logger.warning("не удалось перевыбрать устройство после переключения режима")
+                    max_retries = 5
+                    retry_delay = 2.0
+                    device_found = False
+                    
+                    for retry in range(max_retries):
+                        devices = programmer.find_devices()
+                        if devices:
+                            if programmer.select_device(1):
+                                logger.warning(f"устройство перевыбрано после переключения режима (попытка {retry + 1}/{max_retries})")
+                                device_found = True
+                                post_select_delay = 4 if target_mode == "HV" else 5
+                                logger.warning(f"ожидание {post_select_delay} секунд для стабилизации SWD интерфейса...")
+                                time.sleep(post_select_delay)
+                                break
+                            else:
+                                logger.warning(f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_retries})")
                         else:
-                            logger.warning("устройство перевыбрано после переключения режима")
-                            time.sleep(1)  # Дополнительная задержка перед записью
-                    else:
-                        logger.warning("устройство не найдено после переключения режима")
+                            logger.warning(f"устройство не найдено после переключения режима (попытка {retry + 1}/{max_retries})")
+                        
+                        if retry < max_retries - 1:
+                            time.sleep(retry_delay)
+                    
+                    if not device_found:
+                        logger.error("устройство не найдено после всех попыток переподключения")
+                        continue
             else:
                 logger.warning("Не удалось определить UART порт")
 
@@ -161,7 +163,7 @@ def main():
                     f"Прошивка рассчитана на {hex(firmware_start)}, выбрано {hex(selected_address)}."
                 )
 
-            logger.error(
+            logger.info(
                 f"Запись прошивки {firmware_path.name} размером {len(firmware_data)} байт "
                 f"в {selected_description} (адрес {hex(selected_address)})..."
             )
@@ -170,8 +172,8 @@ def main():
 
             if not success:
                 logger.error(f"Ошибка записи для режима {target_mode}")
-                print(f"\n❌ ОШИБКА: Не удалось записать прошивку для режима {target_mode}")
-                print("Проверьте подключение устройства и попробуйте снова.")
+                print(f"{target_mode}: НЕ ЗАПИСАН")
+                print(f"Результат: ОШИБКА")
                 return
 
             programmer.send_command_uart(
@@ -184,23 +186,37 @@ def main():
             )
 
             logger.warning(f"Результат записи для {target_mode}: успех")
-            print(f"✅ Прошивка для режима {target_mode} успешно записана")
+            print(f"{target_mode}: ЗАПИСАН")
 
             if target_mode == "LV":
                 logger.warning("ожидание стабилизации устройства после записи LV...")
-                time.sleep(3)
+                time.sleep(5)
 
                 logger.warning("переподключение к устройству...")
-                devices = programmer.find_devices()
-                if devices:
-                    if not programmer.select_device(1):
-                        logger.warning("не удалось переподключиться к устройству")
+                max_reconnect_retries = 5
+                reconnect_delay = 2.0
+                device_reconnected = False
+                
+                for retry in range(max_reconnect_retries):
+                    devices = programmer.find_devices()
+                    if devices:
+                        if programmer.select_device(1):
+                            logger.warning(f"устройство переподключено (попытка {retry + 1}/{max_reconnect_retries})")
+                            device_reconnected = True
+                            time.sleep(3)
+                            break
+                        else:
+                            logger.warning(f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_reconnect_retries})")
                     else:
-                        logger.warning("устройство переподключено")
-                        # Дополнительная задержка для стабилизации перед записью HV
-                        time.sleep(2)
-                else:
-                    logger.warning("устройство не найдено для переподключения")
+                        logger.warning(f"устройство не найдено для переподключения (попытка {retry + 1}/{max_reconnect_retries})")
+                    
+                    if retry < max_reconnect_retries - 1:
+                        time.sleep(reconnect_delay)
+                
+                if not device_reconnected:
+                    logger.error("не удалось переподключиться к устройству после записи LV")
+                    logger.warning("продолжаем, но запись HV может не удаться")
+                    time.sleep(5)
     except Exception as e:
         import traceback
         logger.error("=" * 80)
@@ -210,11 +226,10 @@ def main():
         for line in traceback.format_exc().strip().split("\n"):
             logger.error(f"  {line}")
         logger.error("=" * 80)
-        print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА: {e}")
-        print("Подробности записаны в лог файл.")
+        print("Результат: ОШИБКА")
         return
     
-    print("\n✅ Программа успешно завершена")
+    print("Результат: УСПЕХ")
     logger.warning("Программа успешно завершена")
 
 
@@ -392,7 +407,6 @@ def _parse_intel_hex(file_path):
                 use_linear_addressing = True
 
             else:
-
                 continue
 
     if not data_bytes:

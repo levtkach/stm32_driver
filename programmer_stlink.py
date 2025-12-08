@@ -15,6 +15,23 @@ class STLinkProgrammer:
         self.interface = None
         self.version = None
         self._connect()
+    
+    def reconnect(self):
+        if self.usb_device and self.interface:
+            try:
+                usb.util.release_interface(
+                    self.usb_device, self.interface.bInterfaceNumber
+                )
+            except:
+                pass
+        
+        self.usb_device = None
+        self.interface = None
+        self.version = None
+        
+        time.sleep(0.5)
+        
+        return self._connect()
 
     def _connect(self):
         try:

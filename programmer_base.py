@@ -148,18 +148,35 @@ class BaseProgrammer:
         for vid, pid in STLINK_IDS:
             try:
                 if backend is not None:
-                    device = usb.core.find(idVendor=vid, idProduct=pid, backend=backend)
+                    devices_list = usb.core.find(find_all=True, idVendor=vid, idProduct=pid, backend=backend)
                 else:
-                    device = usb.core.find(idVendor=vid, idProduct=pid)
-                if device:
-                    self.devices.append(
-                        {
+                    devices_list = usb.core.find(find_all=True, idVendor=vid, idProduct=pid)
+                
+                for device in devices_list:
+                    try:
+                        serial = None
+                        try:
+                            device.set_configuration()
+                            serial = usb.util.get_string(device, device.iSerialNumber)
+                        except Exception as e:
+                            pass
+                        
+                        device_info = {
                             "type": "ST-Link",
                             "name": f"ST-Link {vid:04X}:{pid:04X}",
                             "vid": vid,
                             "pid": pid,
                         }
-                    )
+                        
+                        if serial:
+                            device_info["serial"] = serial
+                            device_info["name"] = f"ST-Link {vid:04X}:{pid:04X} SN:{serial}"
+                            logger.info(f"Найден ST-Link с серийным номером: {serial}")
+                        
+                        self.devices.append(device_info)
+                    except Exception as e:
+                        logger.debug(f"Ошибка при обработке ST-Link устройства: {e}")
+                        continue
             except Exception:
                 continue
 
@@ -258,6 +275,14 @@ class BaseProgrammer:
                 logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
+                
+                if not success and hasattr(programmer, 'reconnect'):
+                    logger.warning("запись не удалась, попытка переподключения...")
+                    if programmer.reconnect():
+                        logger.info("переподключение успешно, повторная попытка записи...")
+                        time.sleep(1)
+                        success = programmer.write_bytes(data, address)
+                
                 if success:
                     logger.info("запись выполнена через прямой USB доступ")
                 else:
