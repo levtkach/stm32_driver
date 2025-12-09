@@ -1,0 +1,126 @@
+{
+  "test_plan": {
+    "steps": [
+      {
+        "name": "Установка профиля в 00",
+        "command": "SET SWICH_PROFILE=00",
+        "expected_response": "SWICH_PROFILE=00",
+        "wait_time": 10,
+        "description": "Установка профиля переключения в 00"
+      },
+      {
+        "name": "Установка режима в 00",
+        "command": "SET SWICH_MODE=00",
+        "expected_response": "SWICH_MODE=00",
+        "wait_time": 10,
+        "description": "Установка режима переключения в 00"
+      },
+      {
+        "name": "Проверка статуса (режим 00)",
+        "command": "GET STATUS",
+        "expected_response": null,
+        "wait_time": 0,
+        "description": "Получение статуса для проверки режима 00",
+        "validation": {
+          "mode": "00",
+          "expected_values": {
+            "hv_pwm2": "0",
+            "hv_pwm1": "0",
+            "hv_pwm4": "0",
+            "hv_pwm3": "0",
+            "hv_ctrl_relay": "0",
+            "power_off_pfc": "0",
+            "bridge_pwm1": "0",
+            "bridge_pwm2": "0",
+            "bridge_pwm3": "0",
+            "bridge_pwm4": "0",
+            "rect_pwm2": "0",
+            "rect_pwm1": "0",
+            "a0": "0",
+            "a1": "0",
+            "alarm": "0",
+            "power_ok": "0",
+            "cold_r_bus": "0"
+          },
+          "ignore_fields": [
+            "SWICH_UART1__2",
+            "SWICH_SWD1__2",
+            "DSC_status",
+            "EN_12V",
+            "EN_STLINK",
+            "cur3v3_HV",
+            "cur3v3_LV",
+            "Current_HV",
+            "Current_LV",
+            "Mode",
+            "Profile"
+          ]
+        }
+      },
+      {
+        "name": "Установка режима в 01",
+        "command": "SET SWICH_MODE=01",
+        "expected_response": "SWICH_MODE=01",
+        "wait_time": 10,
+        "description": "Установка режима переключения в 01"
+      },
+      {
+        "name": "Проверка статуса (режим 01)",
+        "command": "GET STATUS",
+        "expected_response": null,
+        "wait_time": 0,
+        "description": "Получение статуса для проверки режима 01",
+        "validation": {
+          "mode": "01",
+          "expected_values": {
+            "hv_pwm2": "1",
+            "hv_pwm1": "1",
+            "hv_pwm4": "1",
+            "hv_pwm3": "1",
+            "hv_ctrl_relay": "1",
+            "power_off_pfc": "1",
+            "bridge_pwm1": "1",
+            "bridge_pwm2": "1",
+            "bridge_pwm3": "1",
+            "bridge_pwm4": "1",
+            "rect_pwm2": "1",
+            "rect_pwm1": "1",
+            "a0": "1",
+            "a1": "1",
+            "alarm": "1",
+            "power_ok": "0",
+            "cold_r_bus": "1"
+          },
+          "ignore_fields": [
+            "SWICH_UART1__2",
+            "SWICH_SWD1__2",
+            "DSC_status",
+            "EN_12V",
+            "EN_STLINK",
+            "cur3v3_HV",
+            "cur3v3_LV",
+            "Current_HV",
+            "Current_LV",
+            "Mode",
+            "Profile"
+          ]
+        }
+      },
+      {
+        "name": "Установка режима в FF",
+        "command": "SET SWICH_MODE=FF",
+        "expected_response": "SWICH_MODE=FF",
+        "wait_time": 10,
+        "description": "Установка режима переключения в FF"
+      },
+      {
+        "name": "Установка профиля в FF",
+        "command": "SET SWICH_PROFILE=FF",
+        "expected_response": "SWICH_PROFILE=FF",
+        "wait_time": 10,
+        "description": "Установка профиля переключения в FF"
+      }
+    ]
+  }
+}
+

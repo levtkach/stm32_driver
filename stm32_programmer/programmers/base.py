@@ -148,31 +148,46 @@ class BaseProgrammer:
         for vid, pid in STLINK_IDS:
             try:
                 if backend is not None:
-                    devices_list = usb.core.find(find_all=True, idVendor=vid, idProduct=pid, backend=backend)
+                    devices_list = usb.core.find(
+                        find_all=True, idVendor=vid, idProduct=pid, backend=backend
+                    )
                 else:
-                    devices_list = usb.core.find(find_all=True, idVendor=vid, idProduct=pid)
-                
+                    devices_list = usb.core.find(
+                        find_all=True, idVendor=vid, idProduct=pid
+                    )
+
                 for device in devices_list:
                     try:
                         serial = None
+                        bus = None
+                        address = None
                         try:
                             device.set_configuration()
                             serial = usb.util.get_string(device, device.iSerialNumber)
+                            bus = device.bus
+                            address = device.address
                         except Exception as e:
                             pass
-                        
+
                         device_info = {
                             "type": "ST-Link",
                             "name": f"ST-Link {vid:04X}:{pid:04X}",
                             "vid": vid,
                             "pid": pid,
                         }
-                        
+
                         if serial:
                             device_info["serial"] = serial
-                            device_info["name"] = f"ST-Link {vid:04X}:{pid:04X} SN:{serial}"
+                            device_info["name"] = (
+                                f"ST-Link {vid:04X}:{pid:04X} SN:{serial}"
+                            )
                             logger.info(f"Найден ST-Link с серийным номером: {serial}")
-                        
+
+                        if bus is not None:
+                            device_info["usb_bus"] = bus
+                        if address is not None:
+                            device_info["usb_address"] = address
+
                         self.devices.append(device_info)
                     except Exception as e:
                         logger.debug(f"Ошибка при обработке ST-Link устройства: {e}")
@@ -195,21 +210,25 @@ class BaseProgrammer:
 
     def write_bytes(self, data, address=DEFAULT_FLASH_ADDRESS):
         if not self.selected:
-            return False
+            return False, "Устройство не выбрано"
 
         device_type = self.selected["type"]
         success = False
         last_error = None
+        attempted_methods = []
 
         if device_type == "ST-Link":
             lib_programmer = None
             try:
-                from programmer_stlink_lib import STLinkProgrammerLib
+                from .stlink_lib import STLinkProgrammerLib
 
+                attempted_methods.append("STLinkProgrammerLib")
                 lib_programmer = STLinkProgrammerLib(self.selected)
                 success = lib_programmer.write_bytes(data, address)
                 if success:
                     logger.info("запись выполнена через STLinkProgrammerLib")
+                else:
+                    last_error = "STLinkProgrammerLib: запись не удалась"
             except Exception as e:
                 last_error = f"STLinkProgrammerLib: {e}"
                 success = False
@@ -223,10 +242,11 @@ class BaseProgrammer:
 
         if device_type == "ST-Link" and not success:
             try:
-                from programmer_stlink_cube import STLinkProgrammerCube
+                from .stlink_cube import STLinkProgrammerCube
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
+                    attempted_methods.append("STM32CubeProgrammer")
                     logger.info(
                         f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
                     )
@@ -238,18 +258,21 @@ class BaseProgrammer:
                         last_error = "STM32CubeProgrammer: запись не удалась"
                         logger.warning(f"запись через STM32CubeProgrammer не удалась")
                 else:
+                    attempted_methods.append("STM32CubeProgrammer (не найден)")
                     last_error = "STM32CubeProgrammer: не найден"
                     success = False
             except Exception as e:
+                attempted_methods.append(f"STM32CubeProgrammer (ошибка: {e})")
                 last_error = f"STM32CubeProgrammer: {e}"
                 success = False
 
         if device_type == "ST-Link" and not success:
             try:
-                from programmer_stlink_openocd import STLinkProgrammerOpenOCD
+                from .stlink_openocd import STLinkProgrammerOpenOCD
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
+                    attempted_methods.append("OpenOCD")
                     logger.info(
                         f"попытка записи через OpenOCD: {programmer.openocd_path}"
                     )
@@ -261,56 +284,71 @@ class BaseProgrammer:
                         last_error = "OpenOCD: запись не удалась"
                         logger.warning(f"запись через OpenOCD не удалась")
                 else:
+                    attempted_methods.append("OpenOCD (не найден)")
                     last_error = "OpenOCD: не найден"
                     success = False
             except Exception as e:
+                attempted_methods.append(f"OpenOCD (ошибка: {e})")
                 last_error = f"OpenOCD: {e}"
                 success = False
 
         if device_type == "ST-Link" and not success:
             try:
-                from programmer_stlink import STLinkProgrammer
+                from .stlink import STLinkProgrammer
 
+                attempted_methods.append("STLinkProgrammer (прямой USB)")
                 logger.info("попытка записи через прямой USB доступ (STLinkProgrammer)")
                 logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
-                
-                if not success and hasattr(programmer, 'reconnect'):
+
+                if not success and hasattr(programmer, "reconnect"):
                     logger.warning("запись не удалась, попытка переподключения...")
                     if programmer.reconnect():
-                        logger.info("переподключение успешно, повторная попытка записи...")
+                        logger.info(
+                            "переподключение успешно, повторная попытка записи..."
+                        )
                         time.sleep(1)
                         success = programmer.write_bytes(data, address)
-                
+
                 if success:
                     logger.info("запись выполнена через прямой USB доступ")
                 else:
-                    last_error = "STLinkProgrammer: запись не удалась"
+                    last_error = "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)"
                     logger.warning(f"запись через прямой USB доступ не удалась")
             except Exception as e:
+                attempted_methods.append(f"STLinkProgrammer (ошибка: {e})")
                 last_error = f"STLinkProgrammer: {e}"
                 success = False
 
         if device_type != "ST-Link":
-            return False
+            return False, "Неподдерживаемый тип устройства"
 
         if success:
             logger.info("проверка записи...")
             time.sleep(1.0)
-            verify_result = self._verify_write(data, address)
+            verify_result, verify_details = self._verify_write(data, address)
             if verify_result:
                 logger.info("проверка записи успешна")
-                return True
+                return True, None
             else:
-                logger.warning(
-                    "предупреждение: запись выполнена, но проверка не прошла"
-                )
-                return True
+                error_msg = f"Запись выполнена, но проверка не прошла. {verify_details}"
+                logger.warning(error_msg)
+                return False, error_msg
+
+        error_details = []
+        if attempted_methods:
+            error_details.append(f"Попробованы методы: {', '.join(attempted_methods)}")
+        if last_error:
+            error_details.append(f"Последняя ошибка: {last_error}")
+
+        error_msg = (
+            " | ".join(error_details) if error_details else "Неизвестная ошибка записи"
+        )
 
         if last_error:
             logger.error(f"ошибка записи: {last_error}")
-        return False
+        return False, error_msg
 
     def _verify_write(self, expected_data, address):
         try:
@@ -321,7 +359,7 @@ class BaseProgrammer:
             if device_type == "ST-Link":
                 logger.info(f"попытка чтения данных через STM32CubeProgrammer...")
                 try:
-                    from programmer_stlink_cube import STLinkProgrammerCube
+                    from .stlink_cube import STLinkProgrammerCube
 
                     programmer = STLinkProgrammerCube(self.selected)
                     if programmer.cube_path:
@@ -345,7 +383,7 @@ class BaseProgrammer:
                 if not read_data:
                     logger.info("попытка чтения данных через OpenOCD...")
                     try:
-                        from programmer_stlink_openocd import STLinkProgrammerOpenOCD
+                        from .stlink_openocd import STLinkProgrammerOpenOCD
 
                         programmer = STLinkProgrammerOpenOCD(self.selected)
                         if programmer.openocd_path:
@@ -370,7 +408,7 @@ class BaseProgrammer:
                 if not read_data:
                     logger.info("попытка чтения данных через прямой USB доступ...")
                     try:
-                        from programmer_stlink import STLinkProgrammer
+                        from .stlink import STLinkProgrammer
 
                         programmer = STLinkProgrammer(self.selected)
                         logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
@@ -392,11 +430,11 @@ class BaseProgrammer:
                 if not read_data:
                     logger.error("не удалось прочитать данные ни одним из методов")
                     logger.error("проверка записи невозможна - данные не прочитаны")
-                    return False
+                    return False, "Не удалось прочитать данные для проверки записи"
 
             if not read_data:
                 logger.error("данные не прочитаны, проверка невозможна")
-                return False
+                return False, "Данные не прочитаны, проверка невозможна"
 
             while len(read_data) > 0 and read_data[-1] == 0xFF:
                 read_data = read_data[:-1]
@@ -421,21 +459,44 @@ class BaseProgrammer:
             if read_data_trimmed == expected_data:
                 logger.info("проверка записи:  данные совпадают")
                 logger.info("=" * 80)
-                return True
+                return True, None
             else:
                 logger.info("проверка записи: данные не совпадают")
+                first_mismatch_pos = None
+                first_mismatch_expected = None
+                first_mismatch_actual = None
+
                 for i in range(min(len(expected_data), len(read_data_trimmed))):
                     if expected_data[i] != read_data_trimmed[i]:
+                        first_mismatch_pos = i
+                        first_mismatch_expected = expected_data[i]
+                        first_mismatch_actual = read_data_trimmed[i]
                         logger.info(
                             f"первое несовпадение на позиции {i}: ожидали 0x{expected_data[i]:02X},  получили 0x{read_data_trimmed[i]:02X}"
                         )
                         break
+
+                details_parts = []
+                if first_mismatch_pos is not None:
+                    details_parts.append(
+                        f"Первое несовпадение на позиции {first_mismatch_pos}: ожидали 0x{first_mismatch_expected:02X}, получили 0x{first_mismatch_actual:02X}"
+                    )
+
                 if len(read_data_trimmed) != len(expected_data):
                     logger.info(
-                        f"д лины не совпадают: ожидали {len(expected_data)},  получили {len(read_data_trimmed)}"
+                        f"длины не совпадают: ожидали {len(expected_data)},  получили {len(read_data_trimmed)}"
                     )
+                    details_parts.append(
+                        f"Длины не совпадают: ожидали {len(expected_data)} байт, получили {len(read_data_trimmed)} байт"
+                    )
+
                 logger.info("=" * 80)
-                return False
+                details = (
+                    " | ".join(details_parts)
+                    if details_parts
+                    else "Данные не совпадают с ожидаемыми"
+                )
+                return False, details
 
         except Exception as e:
             import traceback
@@ -481,7 +542,7 @@ class BaseProgrammer:
                 logger.error(f"  {line}")
             logger.error("=" * 80)
 
-            return False
+            return False, f"Ошибка при проверке записи: {error_type}: {error_message}"
 
     def clear_memory(self, address, size):
         if not self.selected:
@@ -491,7 +552,7 @@ class BaseProgrammer:
 
         if device_type == "ST-Link":
             try:
-                from programmer_stlink_cube import STLinkProgrammerCube
+                from .stlink_cube import STLinkProgrammerCube
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
@@ -500,7 +561,7 @@ class BaseProgrammer:
                 pass
 
             try:
-                from programmer_stlink_openocd import STLinkProgrammerOpenOCD
+                from .stlink_openocd import STLinkProgrammerOpenOCD
 
                 programmer = STLinkProgrammerOpenOCD(self.selected)
                 if programmer.openocd_path:
@@ -521,7 +582,7 @@ class BaseProgrammer:
 
         if device_type == "ST-Link":
             try:
-                from programmer_stlink_cube import STLinkProgrammerCube
+                from .stlink_cube import STLinkProgrammerCube
 
                 programmer = STLinkProgrammerCube(self.selected)
                 if programmer.cube_path:
@@ -533,7 +594,7 @@ class BaseProgrammer:
 
             if not data:
                 try:
-                    from programmer_stlink_openocd import STLinkProgrammerOpenOCD
+                    from .stlink_openocd import STLinkProgrammerOpenOCD
 
                     programmer = STLinkProgrammerOpenOCD(self.selected)
                     if programmer.openocd_path:
@@ -543,7 +604,7 @@ class BaseProgrammer:
 
             if not data:
                 try:
-                    from programmer_stlink import STLinkProgrammer
+                    from .stlink import STLinkProgrammer
 
                     programmer = STLinkProgrammer(self.selected)
                     data = programmer.read_bytes(size, address)
@@ -557,6 +618,20 @@ class BaseProgrammer:
 
     def send_command_uart(self, command, expected_response):
         import sys
+
+        if isinstance(command, str):
+            command = command.encode("utf-8")
+
+        if (
+            not command.endswith(b"\n")
+            and not command.endswith(b"\r")
+            and not command.endswith(b"\r\n")
+        ):
+            from stm32_programmer.utils.uart_settings import UARTSettings
+
+            uart_settings = UARTSettings()
+            line_ending_bytes = uart_settings.get_line_ending_bytes()
+            command = command + line_ending_bytes
 
         self.selected_uart.reset_input_buffer()
 

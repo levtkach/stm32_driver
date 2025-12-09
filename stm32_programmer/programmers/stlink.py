@@ -3,7 +3,6 @@ import usb.util
 import time
 import struct
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +14,7 @@ class STLinkProgrammer:
         self.interface = None
         self.version = None
         self._connect()
-    
+
     def reconnect(self):
         if self.usb_device and self.interface:
             try:
@@ -24,13 +23,13 @@ class STLinkProgrammer:
                 )
             except:
                 pass
-        
+
         self.usb_device = None
         self.interface = None
         self.version = None
-        
+
         time.sleep(0.5)
-        
+
         return self._connect()
 
     def _connect(self):

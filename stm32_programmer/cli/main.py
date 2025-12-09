@@ -8,7 +8,7 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-log_dir = Path(__file__).resolve().parent / "logs"
+log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
 log_dir.mkdir(exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -27,7 +27,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-from programmer_base import BaseProgrammer
+from stm32_programmer.programmers.base import BaseProgrammer
 from serial.tools import list_ports
 import serial
 from pathlib import Path
@@ -111,35 +111,49 @@ def main():
 
                     programmer.send_command_uart(command, expected_response)
 
-                    logger.warning(f"Переключение в режим {target_mode}, ожидание стабилизации...")
+                    logger.warning(
+                        f"Переключение в режим {target_mode}, ожидание стабилизации..."
+                    )
                     stabilization_time = 5 if target_mode == "HV" else 5
                     time.sleep(stabilization_time)
-                    
-                    logger.warning("Повторный поиск устройства после переключения режима...")
+
+                    logger.warning(
+                        "Повторный поиск устройства после переключения режима..."
+                    )
                     max_retries = 5
                     retry_delay = 2.0
                     device_found = False
-                    
+
                     for retry in range(max_retries):
                         devices = programmer.find_devices()
                         if devices:
                             if programmer.select_device(1):
-                                logger.warning(f"устройство перевыбрано после переключения режима (попытка {retry + 1}/{max_retries})")
+                                logger.warning(
+                                    f"устройство перевыбрано после переключения режима (попытка {retry + 1}/{max_retries})"
+                                )
                                 device_found = True
                                 post_select_delay = 4 if target_mode == "HV" else 5
-                                logger.warning(f"ожидание {post_select_delay} секунд для стабилизации SWD интерфейса...")
+                                logger.warning(
+                                    f"ожидание {post_select_delay} секунд для стабилизации SWD интерфейса..."
+                                )
                                 time.sleep(post_select_delay)
                                 break
                             else:
-                                logger.warning(f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_retries})")
+                                logger.warning(
+                                    f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_retries})"
+                                )
                         else:
-                            logger.warning(f"устройство не найдено после переключения режима (попытка {retry + 1}/{max_retries})")
-                        
+                            logger.warning(
+                                f"устройство не найдено после переключения режима (попытка {retry + 1}/{max_retries})"
+                            )
+
                         if retry < max_retries - 1:
                             time.sleep(retry_delay)
-                    
+
                     if not device_found:
-                        logger.error("устройство не найдено после всех попыток переподключения")
+                        logger.error(
+                            "устройство не найдено после всех попыток переподключения"
+                        )
                         continue
             else:
                 logger.warning("Не удалось определить UART порт")
@@ -168,12 +182,24 @@ def main():
                 f"в {selected_description} (адрес {hex(selected_address)})..."
             )
 
-            success = programmer.write_bytes(firmware_data, selected_address)
+            write_result = programmer.write_bytes(firmware_data, selected_address)
+            if isinstance(write_result, tuple):
+                success, error_details = write_result
+            else:
+                success = write_result
+                error_details = None
 
             if not success:
-                logger.error(f"Ошибка записи для режима {target_mode}")
+                if error_details:
+                    error_msg = (
+                        f"Ошибка записи для режима {target_mode}: {error_details}"
+                    )
+                else:
+                    error_msg = f"Ошибка записи для режима {target_mode}"
+                logger.error(error_msg)
                 print(f"{target_mode}: НЕ ЗАПИСАН")
                 print(f"Результат: ОШИБКА")
+                print(f"Детали: {error_msg}")
                 return
 
             programmer.send_command_uart(
@@ -196,29 +222,38 @@ def main():
                 max_reconnect_retries = 5
                 reconnect_delay = 2.0
                 device_reconnected = False
-                
+
                 for retry in range(max_reconnect_retries):
                     devices = programmer.find_devices()
                     if devices:
                         if programmer.select_device(1):
-                            logger.warning(f"устройство переподключено (попытка {retry + 1}/{max_reconnect_retries})")
+                            logger.warning(
+                                f"устройство переподключено (попытка {retry + 1}/{max_reconnect_retries})"
+                            )
                             device_reconnected = True
                             time.sleep(3)
                             break
                         else:
-                            logger.warning(f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_reconnect_retries})")
+                            logger.warning(
+                                f"не удалось перевыбрать устройство (попытка {retry + 1}/{max_reconnect_retries})"
+                            )
                     else:
-                        logger.warning(f"устройство не найдено для переподключения (попытка {retry + 1}/{max_reconnect_retries})")
-                    
+                        logger.warning(
+                            f"устройство не найдено для переподключения (попытка {retry + 1}/{max_reconnect_retries})"
+                        )
+
                     if retry < max_reconnect_retries - 1:
                         time.sleep(reconnect_delay)
-                
+
                 if not device_reconnected:
-                    logger.error("не удалось переподключиться к устройству после записи LV")
+                    logger.error(
+                        "не удалось переподключиться к устройству после записи LV"
+                    )
                     logger.warning("продолжаем, но запись HV может не удаться")
                     time.sleep(5)
     except Exception as e:
         import traceback
+
         logger.error("=" * 80)
         logger.error(f"Критическая ошибка: {type(e).__name__}")
         logger.error(f"Сообщение: {str(e)}")
@@ -228,7 +263,7 @@ def main():
         logger.error("=" * 80)
         print("Результат: ОШИБКА")
         return
-    
+
     print("Результат: УСПЕХ")
     logger.warning("Программа успешно завершена")
 
@@ -330,7 +365,7 @@ def load_firmware_image(mode):
     if mode not in file_map:
         raise ValueError(f"Неизвестный режим прошивки: {mode}")
 
-    firmware_dir = Path(__file__).resolve().parent / "firmware"
+    firmware_dir = Path(__file__).resolve().parent.parent.parent / "firmware"
     file_path = firmware_dir / file_map[mode]
 
     if not file_path.exists():
