@@ -47,13 +47,16 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
             line_ending = uart_settings.get_line_ending()
 
     try:
+
+        port_timeout = 3.0 if sys.platform == "win32" else 1.0
+
         serial_port = serial.Serial(
             port=port_name,
             baudrate=baudrate,
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
-            timeout=1,
+            timeout=port_timeout,
             xonxoff=False,
             rtscts=False,
             dsrdtr=False,
@@ -65,8 +68,16 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
         if serial_port.is_open:
             logger = logging.getLogger(__name__)
             logger.info(
-                f"[UART] подключено к {port_name} (baud={baudrate}, line_ending={line_ending})"
+                f"[UART] подключено к {port_name} (baud={baudrate}, line_ending={line_ending}, timeout={port_timeout})"
             )
+
+            time.sleep(0.2)
+
+            try:
+                serial_port.reset_input_buffer()
+                serial_port.reset_output_buffer()
+            except:
+                pass
             return serial_port
         else:
             raise serial.SerialException(f"Не удалось открыть {port_name}")
@@ -934,6 +945,17 @@ def program_device(
 
         if status_callback:
             status_callback("Включение питания (начальное)...")
+
+        if programmer.selected_uart:
+            logger.info("ожидание стабилизации UART перед первой командой...")
+            time.sleep(0.5)
+            try:
+                programmer.selected_uart.reset_input_buffer()
+                programmer.selected_uart.reset_output_buffer()
+                logger.info("буферы UART очищены перед первой командой")
+            except Exception as e:
+                logger.warning(f"ошибка при очистке буферов: {e}")
+
         if progress_callback:
             progress_callback("->> SET EN_12V=ON")
         from stm32_programmer.utils.uart_settings import UARTSettings

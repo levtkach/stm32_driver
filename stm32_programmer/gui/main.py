@@ -6,6 +6,9 @@ from .styles import get_dark_stylesheet
 
 
 def main():
+
+    pass
+
     if sys.platform == "win32":
         import io
 

@@ -111,9 +111,13 @@ class FirmwareLoadButton(QPushButton):
     def paintEvent(self, event):
         super().paintEvent(event)
         if self.delete_animation.is_animating:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            self.delete_animation.draw_progress_bar(painter)
+            painter = QPainter()
+            if painter.begin(self):
+                try:
+                    painter.setRenderHint(QPainter.Antialiasing)
+                    self.delete_animation.draw_progress_bar(painter)
+                finally:
+                    painter.end()
 
     def set_clear_callback(self, callback):
         self.clear_callback = callback
