@@ -102,6 +102,5 @@ reader.py
 
 logs/
 archive/
-libusb-1.0.dll
 build_gui.spec
 stm32_programmer_gui.py
