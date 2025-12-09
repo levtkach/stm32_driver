@@ -364,8 +364,8 @@ def check_current_mode(programmer, expected_mode, max_retries=3, retry_delay=0.5
                 f"Проверка режима через повторную команду SET (попытка {attempt + 1}/{max_retries})..."
             )
             time.sleep(retry_delay)
-            command = f"SETSWICH_SWD1__2={expected_mode}".encode("utf-8")
-            expected_response = f"SWICH_SWD1__2={expected_mode}".encode("utf-8")
+            command = f"SETSWICH_SWD1__2={expected_mode}".strip().encode("utf-8")
+            expected_response = f"SWICH_SWD1__2={expected_mode}".strip().encode("utf-8")
             if programmer.send_command_uart(command, expected_response):
                 logger.info(
                     f"Режим {expected_mode} подтвержден через повторную команду SET"
@@ -416,49 +416,124 @@ def parse_status_response(response_text):
 
 def get_status_from_uart(programmer, timeout=5.0):
     logger = logging.getLogger(__name__)
+    import sys
 
     if not programmer.selected_uart or not programmer.selected_uart.is_open:
         logger.error("UART порт не открыт")
         return None
 
-    try:
-        programmer.selected_uart.reset_input_buffer()
-        command = "GET STATUS\n".encode("utf-8")
-        programmer.selected_uart.write(command)
-        programmer.selected_uart.flush()
+    logger.info("=" * 80)
+    logger.info("КРИТИЧЕСКАЯ КОМАНДА: GET STATUS")
+    logger.info(f"платформа: {sys.platform}")
+    logger.info(f"timeout: {timeout} сек")
 
-        time.sleep(0.2)
+    max_retries = 3
+    retry_delays = [0.2, 0.3, 0.5]
 
-        buffer = b""
-        start_time = time.time()
-        last_data_time = start_time
-        max_idle_time = 0.5
+    for attempt in range(max_retries):
+        logger.info(f"попытка {attempt + 1}/{max_retries} получения статуса")
 
-        while (time.time() - start_time) < timeout:
-            if programmer.selected_uart.in_waiting > 0:
-                data = programmer.selected_uart.read(
-                    programmer.selected_uart.in_waiting
-                )
-                if data:
-                    buffer += data
-                    last_data_time = time.time()
+        if attempt > 0:
+            delay = retry_delays[min(attempt - 1, len(retry_delays) - 1)]
+            logger.info(f"задержка перед повторной попыткой: {delay} сек")
+            time.sleep(delay)
+
+        try:
+
+            try:
+                bytes_before = programmer.selected_uart.in_waiting
+                programmer.selected_uart.reset_input_buffer()
+                logger.info(f"очищен буфер uart, было байт: {bytes_before}")
+            except Exception as e:
+                logger.warning(f"ошибка при очистке буфера: {e}")
+
+            from stm32_programmer.utils.uart_settings import UARTSettings
+
+            uart_settings = UARTSettings()
+            line_ending_bytes = uart_settings.get_line_ending_bytes()
+            command = "GET STATUS".strip().encode("utf-8") + line_ending_bytes
+
+            logger.info(f"отправка команды GET STATUS (hex): {command.hex()}")
+            start_send_time = time.time()
+            programmer.selected_uart.write(command)
+            programmer.selected_uart.flush()
+            send_duration = time.time() - start_send_time
+            logger.info(f"команда отправлена за {send_duration:.4f} сек")
+
+            post_send_delay = retry_delays[min(attempt, len(retry_delays) - 1)]
+            logger.info(f"задержка после отправки: {post_send_delay} сек")
+            time.sleep(post_send_delay)
+
+            buffer = b""
+            start_time = time.time()
+            last_data_time = start_time
+            max_idle_time = 0.5
+            read_attempts = 0
+
+            logger.info(f"начало чтения ответа, timeout: {timeout} сек")
+
+            while (time.time() - start_time) < timeout:
+                read_attempts += 1
+                elapsed = time.time() - start_time
+
+                if programmer.selected_uart.in_waiting > 0:
+                    bytes_to_read = programmer.selected_uart.in_waiting
+                    if read_attempts % 20 == 0:
+                        logger.info(
+                            f"попытка {read_attempts}: доступно {bytes_to_read} байт, прошло {elapsed:.3f} сек"
+                        )
+
+                    data = programmer.selected_uart.read(bytes_to_read)
+                    if data:
+                        buffer += data
+                        last_data_time = time.time()
+                        logger.info(
+                            f"прочитано {len(data)} байт, всего: {len(buffer)} байт"
+                        )
+                        if len(buffer) > 0 and read_attempts % 10 == 0:
+                            logger.debug(
+                                f"данные (text, первые 200): {data.decode('utf-8', errors='replace')[:200]}"
+                            )
+                else:
+                    if buffer and (time.time() - last_data_time) > max_idle_time:
+                        logger.info(
+                            f"пауза в данных {max_idle_time} сек, прерываем чтение"
+                        )
+                        break
+                time.sleep(0.05)
+
+            total_read_time = time.time() - start_time
+            logger.info(
+                f"чтение завершено за {total_read_time:.3f} сек, попыток: {read_attempts}"
+            )
+
+            if buffer:
+                response = buffer.decode("utf-8", errors="replace").strip()
+                logger.info(f"получен ответ GET STATUS ({len(response)} символов)")
+                logger.info(f"первые 300 символов: {response[:300]}")
+                logger.info("=" * 80)
+                return response
             else:
-                if buffer and (time.time() - last_data_time) > max_idle_time:
-                    break
-            time.sleep(0.05)
+                logger.warning(f"не получен ответ на попытке {attempt + 1}, буфер пуст")
+                if programmer.selected_uart:
+                    logger.warning(
+                        f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
+                    )
 
-        if buffer:
-            response = buffer.decode("utf-8", errors="replace").strip()
-            logger.debug(f"Получен ответ GET STATUS ({len(response)} символов)")
-            logger.debug(f"Первые 300 символов: {response[:300]}")
-            return response
-        else:
-            logger.warning("Не получен ответ на GET STATUS")
-            return None
+        except Exception as e:
+            logger.error(f"ошибка при получении статуса (попытка {attempt + 1}): {e}")
+            import traceback
 
-    except Exception as e:
-        logger.error(f"Ошибка при получении статуса: {e}")
-        return None
+            logger.error(f"трассировка: {traceback.format_exc()}")
+            if attempt < max_retries - 1:
+                continue
+            else:
+                logger.info("=" * 80)
+                return None
+
+    logger.warning("не получен ответ на GET STATUS после всех попыток")
+    logger.info("=" * 80)
+    return None
 
 
 def validate_status(status_dict, expected_values, ignore_fields=None):
@@ -551,11 +626,17 @@ def run_test_plan(
             test_progress = 80 + int((step_idx / total_steps) * 20)
             progress_percent_callback(test_progress)
         step_name = step.get("name", f"Шаг {step_idx}")
-        command = step.get("command", "")
+        command = step.get("command", "").strip()
         expected_response = step.get("expected_response")
+        if expected_response and isinstance(expected_response, str):
+            expected_response = expected_response.strip()
         wait_time = step.get("wait_time", 0)
         description = step.get("description", "")
         validation = step.get("validation")
+
+        if not command:
+            logger.warning(f"Шаг '{step_name}': команда пустая после удаления пробелов")
+            continue
 
         if status_callback:
             status_callback(f"Тест {step_idx}/{len(test_plan)}: {step_name}")
@@ -570,45 +651,133 @@ def run_test_plan(
             uart_settings = UARTSettings()
             line_ending_bytes = uart_settings.get_line_ending_bytes()
             command_bytes = command.encode("utf-8") + line_ending_bytes
+
+            if command.startswith(" "):
+                logger.error(f"ОШИБКА: команда начинается с пробела! '{command}'")
+            logger.debug(
+                f"команда после strip: '{command}' (hex: {command_bytes.hex()})"
+            )
             if expected_response:
                 expected_response_bytes = expected_response.encode("utf-8")
 
-                if command.startswith("SET"):
-                    original_timeout = programmer.selected_uart.timeout
-                    programmer.selected_uart.timeout = 2.0
-                    success = programmer.send_command_uart(
-                        command_bytes, expected_response_bytes
+                if expected_response.startswith(" "):
+                    logger.error(
+                        f"ОШИБКА: ожидаемый ответ начинается с пробела! '{expected_response}'"
                     )
-                    programmer.selected_uart.timeout = original_timeout
-                else:
-                    success = programmer.send_command_uart(
-                        command_bytes, expected_response_bytes
+                logger.debug(
+                    f"ожидаемый ответ после strip: '{expected_response}' (hex: {expected_response_bytes.hex()})"
+                )
+
+                logger.info("=" * 80)
+                logger.info(f"КРИТИЧЕСКАЯ КОМАНДА ТЕСТИРОВАНИЯ: {command}")
+                logger.info(f"платформа: {sys.platform}")
+                logger.info(
+                    f"uart порт открыт: {programmer.selected_uart.is_open if programmer.selected_uart else False}"
+                )
+                if programmer.selected_uart:
+                    logger.info(f"uart порт имя: {programmer.selected_uart.port}")
+                    logger.info(f"uart timeout: {programmer.selected_uart.timeout}")
+                    logger.info(
+                        f"uart in_waiting до отправки: {programmer.selected_uart.in_waiting}"
                     )
+
+                max_retries = 5
+                retry_delays = [0.1, 0.2, 0.3, 0.5, 1.0]
+                success = False
+                actual_response = None
+
+                for attempt in range(max_retries):
+                    logger.info(
+                        f"попытка {attempt + 1}/{max_retries} отправки команды {command}"
+                    )
+
+                    if attempt > 0:
+                        delay = retry_delays[min(attempt - 1, len(retry_delays) - 1)]
+                        logger.info(f"задержка перед повторной попыткой: {delay} сек")
+                        time.sleep(delay)
+
+                    try:
+                        logger.info(
+                            f"отправка команды через send_command_uart (попытка {attempt + 1})..."
+                        )
+
+                        if command.startswith("SET"):
+                            original_timeout = programmer.selected_uart.timeout
+                            programmer.selected_uart.timeout = (
+                                3.0 if sys.platform == "win32" else 2.0
+                            )
+                            success = programmer.send_command_uart(
+                                command_bytes, expected_response_bytes
+                            )
+                            programmer.selected_uart.timeout = original_timeout
+                        else:
+                            success = programmer.send_command_uart(
+                                command_bytes, expected_response_bytes
+                            )
+
+                        if success:
+                            logger.info(f"успех на попытке {attempt + 1}!")
+                            break
+                        else:
+                            logger.warning(f"не получен ответ на попытке {attempt + 1}")
+                            if programmer.selected_uart:
+                                logger.warning(
+                                    f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
+                                )
+
+                            time.sleep(0.3)
+                            buffer = b""
+                            start_time = time.time()
+                            while (time.time() - start_time) < 1.0:
+                                if programmer.selected_uart.in_waiting > 0:
+                                    data = programmer.selected_uart.read(
+                                        programmer.selected_uart.in_waiting
+                                    )
+                                    if data:
+                                        buffer += data
+                                        logger.info(
+                                            f"дополнительно прочитано {len(data)} байт"
+                                        )
+                                        if b"\n" in buffer or b"\r" in buffer:
+                                            break
+                                time.sleep(0.05)
+
+                            if buffer:
+                                try:
+                                    actual_response = buffer.decode(
+                                        "utf-8", errors="replace"
+                                    ).strip()
+                                    logger.info(
+                                        f"дополнительный ответ (text): {actual_response}"
+                                    )
+                                    logger.info(
+                                        f"дополнительный ответ (hex): {buffer.hex()}"
+                                    )
+
+                                    if actual_response == expected_response:
+                                        success = True
+                                        logger.info(
+                                            "дополнительный ответ совпадает с ожидаемым!"
+                                        )
+                                        break
+                                except:
+                                    actual_response = str(buffer)
+
+                    except Exception as e:
+                        logger.error(
+                            f"ошибка при получении ответа (попытка {attempt + 1}): {e}"
+                        )
+                        import traceback
+
+                        logger.error(f"трассировка: {traceback.format_exc()}")
+                        continue
+
+                logger.info(
+                    f"результат всех попыток: {'успех' if success else 'неудача'}"
+                )
+                logger.info("=" * 80)
 
                 if not success:
-                    time.sleep(0.3)
-                    actual_response = None
-                    buffer = b""
-                    start_time = time.time()
-                    while (time.time() - start_time) < 1.0:
-                        if programmer.selected_uart.in_waiting > 0:
-                            data = programmer.selected_uart.read(
-                                programmer.selected_uart.in_waiting
-                            )
-                            if data:
-                                buffer += data
-                                if b"\n" in buffer or b"\r" in buffer:
-                                    break
-                        time.sleep(0.05)
-
-                    if buffer:
-                        try:
-                            actual_response = buffer.decode(
-                                "utf-8", errors="replace"
-                            ).strip()
-                        except:
-                            actual_response = str(buffer)
-
                     if actual_response:
                         error_msg = f"Ошибка на шаге '{step_name}': ожидали '{expected_response}', получили '{actual_response}'"
                     else:
@@ -721,6 +890,8 @@ def program_device(
         logger.warning(error_msg)
         if status_callback:
             status_callback(error_msg)
+
+        programmer.close_uart()
         return False, error_msg
 
     try:
@@ -769,8 +940,8 @@ def program_device(
 
         uart_settings = UARTSettings()
         line_ending_bytes = uart_settings.get_line_ending_bytes()
-        command = "SET EN_12V=ON".encode("utf-8") + line_ending_bytes
-        programmer.send_command_uart(command, "EN_12V=ON".encode("utf-8"))
+        command = "SET EN_12V=ON".strip().encode("utf-8") + line_ending_bytes
+        programmer.send_command_uart(command, "EN_12V=ON".strip().encode("utf-8"))
         if progress_callback:
             progress_callback("<<- EN_12V=ON")
         if progress_percent_callback:
@@ -824,9 +995,19 @@ def program_device(
                 if programmer.selected_uart:
                     if progress_callback:
                         progress_callback(f"->> SET SWICH_SWD1__2={target_mode}")
-                    command_str = f"SET SWICH_SWD1__2={target_mode}"
+                    command_str = f"SET SWICH_SWD1__2={target_mode}".strip()
                     command = command_str.encode("utf-8")
-                    expected_response = f"SWICH_SWD1__2={target_mode}".encode("utf-8")
+                    expected_response = f"SWICH_SWD1__2={target_mode}".strip().encode(
+                        "utf-8"
+                    )
+
+                    if command_str.startswith(" "):
+                        logger.error(
+                            f"ОШИБКА: команда начинается с пробела! '{command_str}'"
+                        )
+                    logger.debug(
+                        f"команда после strip: '{command_str}' (hex: {command.hex()})"
+                    )
 
                     if not command.endswith(b"\n"):
                         from stm32_programmer.utils.uart_settings import UARTSettings
@@ -1178,16 +1359,20 @@ def program_device(
             uart_settings = UARTSettings()
             line_ending_bytes = uart_settings.get_line_ending_bytes()
 
-            command_off = "SET EN_12V=OFF".encode("utf-8") + line_ending_bytes
-            programmer.send_command_uart(command_off, "EN_12V=OFF".encode("utf-8"))
+            command_off = "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
+            programmer.send_command_uart(
+                command_off, "EN_12V=OFF".strip().encode("utf-8")
+            )
             if progress_callback:
                 progress_callback("<<- EN_12V=OFF")
             time.sleep(1)
 
             if progress_callback:
                 progress_callback("->> SET EN_12V=ON")
-            command_on = "SET EN_12V=ON".encode("utf-8") + line_ending_bytes
-            programmer.send_command_uart(command_on, "EN_12V=ON".encode("utf-8"))
+            command_on = "SET EN_12V=ON".strip().encode("utf-8") + line_ending_bytes
+            programmer.send_command_uart(
+                command_on, "EN_12V=ON".strip().encode("utf-8")
+            )
             if progress_callback:
                 progress_callback("<<- EN_12V=ON")
             if progress_percent_callback:
@@ -1321,3 +1506,7 @@ def program_device(
         if status_callback:
             status_callback(error_msg)
         return False, error_msg
+    finally:
+
+        if programmer:
+            programmer.close_uart()

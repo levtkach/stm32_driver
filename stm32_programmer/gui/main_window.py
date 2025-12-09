@@ -641,7 +641,11 @@ class STM32ProgrammerGUI(QWidget):
         logger.info("Сохранение состояния при закрытии приложения...")
         self._save_firmware_paths()
         self._save_last_device_and_port()
-        logger.info("Состояние сохранено")
+
+        if hasattr(self, "programmer") and self.programmer:
+            self.programmer.close_uart()
+
+        logger.info("Состояние сохранено, UART закрыт")
         event.accept()
 
     def _save_last_device_and_port(self):

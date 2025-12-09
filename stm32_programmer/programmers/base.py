@@ -137,6 +137,19 @@ class BaseProgrammer:
         self.selected = None
         self.selected_uart = None
 
+    def close_uart(self):
+        """Корректно закрывает UART подключение"""
+        if self.selected_uart:
+            try:
+                if self.selected_uart.is_open:
+                    logger.info(f"закрытие UART порта {self.selected_uart.port}")
+                    self.selected_uart.close()
+                    logger.info("UART порт закрыт")
+                self.selected_uart = None
+            except Exception as e:
+                logger.warning(f"ошибка при закрытии UART порта: {e}")
+                self.selected_uart = None
+
     def find_devices(self):
         self.devices = []
 
@@ -624,7 +637,39 @@ class BaseProgrammer:
         logger.debug(f"платформа: {sys.platform}")
 
         if isinstance(command, str):
-            command = command.encode("utf-8")
+            original_command = command
+            command = command.strip().encode("utf-8")
+            if original_command != original_command.strip():
+                logger.warning(
+                    f"обнаружены пробелы в команде! было: '{original_command}', стало: '{original_command.strip()}'"
+                )
+        elif isinstance(command, bytes):
+
+            if command.startswith(b" "):
+                logger.warning(
+                    f"обнаружены пробелы в начале команды (bytes)! было: {command.hex()}"
+                )
+                command = command.lstrip()
+            if command.endswith(b" "):
+                logger.warning(
+                    f"обнаружены пробелы в конце команды (bytes)! было: {command.hex()}"
+                )
+                command = command.rstrip()
+
+        if isinstance(expected_response, str):
+            original_response = expected_response
+            expected_response = expected_response.strip().encode("utf-8")
+            if original_response != original_response.strip():
+                logger.warning(
+                    f"обнаружены пробелы в ожидаемом ответе! было: '{original_response}', стало: '{original_response.strip()}'"
+                )
+        elif isinstance(expected_response, bytes):
+
+            if expected_response.startswith(b" ") or expected_response.endswith(b" "):
+                logger.warning(
+                    f"обнаружены пробелы в ожидаемом ответе (bytes)! было: {expected_response.hex()}"
+                )
+            expected_response = expected_response.strip()
 
         if (
             not command.endswith(b"\n")
@@ -640,6 +685,9 @@ class BaseProgrammer:
 
         logger.debug(f"команда (text): {command.decode('utf-8', errors='replace')}")
         logger.debug(f"команда (hex): {command.hex()}")
+
+        if command.startswith(b" "):
+            logger.error(f"ОШИБКА: команда начинается с пробела! hex: {command.hex()}")
         logger.debug(
             f"ожидаемый ответ (text): {expected_response.decode('utf-8', errors='replace')}"
         )

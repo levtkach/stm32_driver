@@ -35,6 +35,13 @@ def main():
     dark_palette.setColor(dark_palette.HighlightedText, Qt.white)
     app.setPalette(dark_palette)
     window = STM32ProgrammerGUI()
+
+    def cleanup_on_exit():
+        if hasattr(window, "programmer") and window.programmer:
+            window.programmer.close_uart()
+
+    app.aboutToQuit.connect(cleanup_on_exit)
+
     window.show()
     sys.exit(app.exec_())
 

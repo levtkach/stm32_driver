@@ -65,10 +65,27 @@ def connect_to_uart_port(port_name, baudrate=115200):
 
 
 def main():
+    import signal
+    import atexit
+
     logger.warning(f"Логи записываются в файл: {log_filename}")
     print("Запуск программы...")
 
     programmer = BaseProgrammer()
+
+    def cleanup_uart():
+        if programmer and programmer.selected_uart:
+            programmer.close_uart()
+
+    atexit.register(cleanup_uart)
+
+    def signal_handler(sig, frame):
+        logger.info("Получен сигнал завершения, закрываем UART...")
+        cleanup_uart()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     devices = programmer.find_devices()
     if not devices:
@@ -106,8 +123,13 @@ def main():
                         )
                         programmer.selected_uart = None
                 if programmer.selected_uart:
-                    command = f"SET SWICH_SWD1__2={target_mode}\n".encode("utf-8")
-                    expected_response = f"SWICH_SWD1__2={target_mode}".encode("utf-8")
+                    command = (
+                        f"SET SWICH_SWD1__2={target_mode}".strip().encode("utf-8")
+                        + b"\n"
+                    )
+                    expected_response = f"SWICH_SWD1__2={target_mode}".strip().encode(
+                        "utf-8"
+                    )
 
                     programmer.send_command_uart(command, expected_response)
 
@@ -263,6 +285,10 @@ def main():
         logger.error("=" * 80)
         print("Результат: ОШИБКА")
         return
+    finally:
+
+        if programmer and programmer.selected_uart:
+            programmer.close_uart()
 
     print("Результат: УСПЕХ")
     logger.warning("Программа успешно завершена")
