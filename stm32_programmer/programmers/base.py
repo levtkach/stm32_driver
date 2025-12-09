@@ -619,6 +619,10 @@ class BaseProgrammer:
     def send_command_uart(self, command, expected_response):
         import sys
 
+        logger.debug("=" * 60)
+        logger.debug("send_command_uart вызван")
+        logger.debug(f"платформа: {sys.platform}")
+
         if isinstance(command, str):
             command = command.encode("utf-8")
 
@@ -632,11 +636,50 @@ class BaseProgrammer:
             uart_settings = UARTSettings()
             line_ending_bytes = uart_settings.get_line_ending_bytes()
             command = command + line_ending_bytes
+            logger.debug(f"добавлен line ending: {line_ending_bytes.hex()}")
 
-        self.selected_uart.reset_input_buffer()
+        logger.debug(f"команда (text): {command.decode('utf-8', errors='replace')}")
+        logger.debug(f"команда (hex): {command.hex()}")
+        logger.debug(
+            f"ожидаемый ответ (text): {expected_response.decode('utf-8', errors='replace')}"
+        )
+        logger.debug(f"ожидаемый ответ (hex): {expected_response.hex()}")
 
-        self.selected_uart.write(command)
-        self.selected_uart.flush()
+        if not self.selected_uart:
+            logger.error("selected_uart is None!")
+            return False
+
+        if not self.selected_uart.is_open:
+            logger.error(
+                f"uart порт не открыт! порт: {self.selected_uart.port if self.selected_uart else 'None'}"
+            )
+            return False
+
+        logger.debug(f"uart порт: {self.selected_uart.port}")
+        logger.debug(f"uart timeout: {self.selected_uart.timeout}")
+        logger.debug(f"uart in_waiting до очистки: {self.selected_uart.in_waiting}")
+
+        try:
+            bytes_before_reset = self.selected_uart.in_waiting
+            self.selected_uart.reset_input_buffer()
+            logger.debug(f"буфер очищен, было байт: {bytes_before_reset}")
+        except Exception as e:
+            logger.warning(f"ошибка при очистке буфера: {e}")
+
+        try:
+            write_start = time.time()
+            bytes_written = self.selected_uart.write(command)
+            self.selected_uart.flush()
+            write_duration = time.time() - write_start
+            logger.debug(
+                f"команда записана: {bytes_written} байт за {write_duration:.4f} сек"
+            )
+        except Exception as e:
+            logger.error(f"ошибка при записи команды: {e}")
+            import traceback
+
+            logger.error(f"трассировка: {traceback.format_exc()}")
+            return False
 
         time.sleep(0.01)
 
@@ -645,41 +688,81 @@ class BaseProgrammer:
 
         max_wait_time = 3.0 if sys.platform == "win32" else 2.0
         start_time = time.time()
+        logger.debug(f"максимальное время ожидания: {max_wait_time} сек")
 
         try:
-
+            read_attempts = 0
             while (time.time() - start_time) < max_wait_time:
-                if self.selected_uart.in_waiting > 0:
+                elapsed = time.time() - start_time
+                read_attempts += 1
 
-                    data = self.selected_uart.read(self.selected_uart.in_waiting)
+                if self.selected_uart.in_waiting > 0:
+                    bytes_to_read = self.selected_uart.in_waiting
+                    logger.debug(
+                        f"попытка {read_attempts}: доступно {bytes_to_read} байт, прошло {elapsed:.3f} сек"
+                    )
+
+                    data = self.selected_uart.read(bytes_to_read)
                     if data:
                         buffer += data
+                        logger.debug(
+                            f"прочитано {len(data)} байт, всего в буфере: {len(buffer)} байт"
+                        )
+                        logger.debug(f"данные (hex): {data.hex()[:100]}...")
+                        logger.debug(
+                            f"данные (text): {data.decode('utf-8', errors='replace')[:100]}"
+                        )
 
                         if b"\n" in buffer or b"\r" in buffer:
+                            logger.debug("найден символ конца строки, прерываем чтение")
                             break
 
                         if expected_response in buffer:
+                            logger.debug(
+                                "найден ожидаемый ответ в буфере, прерываем чтение"
+                            )
                             break
+                else:
+                    if read_attempts % 50 == 0:
+                        logger.debug(
+                            f"попытка {read_attempts}: нет данных, прошло {elapsed:.3f} сек"
+                        )
 
                 time.sleep(0.01)
 
+            total_time = time.time() - start_time
+            logger.debug(
+                f"чтение завершено за {total_time:.3f} сек, попыток: {read_attempts}"
+            )
+
             if buffer:
-
                 response = buffer.strip()
-
                 response = response.rstrip(b"\r\n").rstrip(b"\n\r")
+                logger.debug(
+                    f"обработанный ответ (text): {response.decode('utf-8', errors='replace')}"
+                )
+                logger.debug(f"обработанный ответ (hex): {response.hex()}")
+            else:
+                logger.warning("буфер пуст после чтения")
 
         except serial.SerialException as read_error:
-            logger.warning(f"ошибка чтения ответа от UART: {read_error}")
+            logger.error(f"ошибка чтения ответа от UART: {read_error}")
+            import traceback
+
+            logger.error(f"трассировка: {traceback.format_exc()}")
             return False
         except Exception as e:
-            logger.warning(f"ошибка при чтении: {e}")
+            logger.error(f"ошибка при чтении: {e}")
+            import traceback
+
+            logger.error(f"трассировка: {traceback.format_exc()}")
             return False
 
         if response == expected_response:
             logger.info(
                 f"получен ответ от UART: {response.decode('utf-8', errors='replace')}"
             )
+            logger.debug("=" * 60)
             return True
         else:
             display_response = (
@@ -690,7 +773,26 @@ class BaseProgrammer:
                 f"ожидали '{expected_response.decode('utf-8')}', получили '{display_response}'."
             )
 
-            if sys.platform == "win32" and response:
-                logger.warning(f"сырой ответ (hex): {response.hex()}")
-                logger.warning(f"ожидаемый ответ (hex): {expected_response.hex()}")
+            if sys.platform == "win32":
+                logger.warning("детальная диагностика для Windows:")
+                if response:
+                    logger.warning(f"сырой ответ (hex): {response.hex()}")
+                    logger.warning(f"ожидаемый ответ (hex): {expected_response.hex()}")
+                    logger.warning(
+                        f"длина ответа: {len(response)}, ожидалось: {len(expected_response)}"
+                    )
+                    if len(response) == len(expected_response):
+                        for i, (r, e) in enumerate(zip(response, expected_response)):
+                            if r != e:
+                                logger.warning(
+                                    f"первое несовпадение на позиции {i}: получили 0x{r:02X}, ожидали 0x{e:02X}"
+                                )
+                                break
+                else:
+                    logger.warning("ответ пустой")
+                    if self.selected_uart:
+                        logger.warning(
+                            f"uart in_waiting после чтения: {self.selected_uart.in_waiting}"
+                        )
+            logger.debug("=" * 60)
             return False
