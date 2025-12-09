@@ -131,6 +131,91 @@ STLINK_IDS = [STLINK_V2, STLINK_V21, STLINK_V21_NEW, STLINK_V3, STLINK_V3_ALT]
 DEFAULT_FLASH_ADDRESS = 0x08000000
 
 
+def reset_uart_system_level(port_name):
+    """Системная перезагрузка UART порта"""
+    logger = logging.getLogger(__name__)
+    logger.info(f"Системная перезагрузка UART порта {port_name}...")
+
+    try:
+        if platform.system() == "Darwin":
+
+            try:
+
+                tty_port = port_name.replace("/dev/cu.", "/dev/tty.")
+
+                lsof_result = subprocess.run(
+                    ["lsof", "-t", tty_port], capture_output=True, text=True, timeout=5
+                )
+
+                if lsof_result.returncode == 0 and lsof_result.stdout.strip():
+                    pids = lsof_result.stdout.strip().split("\n")
+                    current_pid = str(os.getpid())
+                    for pid in pids:
+                        if pid.strip() != current_pid:
+                            try:
+                                logger.info(
+                                    f"Завершение процесса {pid}, использующего порт..."
+                                )
+                                subprocess.run(
+                                    ["kill", "-9", pid.strip()], timeout=5, check=False
+                                )
+                            except:
+                                pass
+
+                time.sleep(1.5)
+
+                logger.info("Сброс последовательного порта...")
+
+                time.sleep(2.0)
+
+                logger.info(f"Системная перезагрузка порта {port_name} завершена")
+
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                FileNotFoundError,
+            ) as e:
+                logger.warning(f"Ошибка при системной перезагрузке порта: {e}")
+
+                time.sleep(2.0)
+
+        elif platform.system() == "Windows":
+
+            logger.info(
+                "На Windows системная перезагрузка порта требует дополнительных инструментов"
+            )
+            time.sleep(1.5)
+
+        else:
+            try:
+
+                result = subprocess.run(
+                    ["udevadm", "info", "-q", "path", "-n", port_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0:
+                    device_path = result.stdout.strip()
+                    logger.info(f"Найдено устройство: {device_path}")
+                    time.sleep(1.5)
+                else:
+                    time.sleep(1.5)
+
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                FileNotFoundError,
+            ) as e:
+                logger.warning(f"Ошибка при системной перезагрузке порта на Linux: {e}")
+                time.sleep(1.5)
+
+    except Exception as e:
+        logger.warning(f"Ошибка при системной перезагрузке порта: {e}")
+        time.sleep(2.0)
+
+
 class BaseProgrammer:
     def __init__(self):
         self.devices = []
@@ -174,6 +259,10 @@ class BaseProgrammer:
 
                     time.sleep(0.1)
                     logger.info("UART порт закрыт и буферы очищены")
+
+                    # Системная перезагрузка порта после закрытия
+                    reset_uart_system_level(port_name)
+
                 self.selected_uart = None
             except (ValueError, OSError, IOError) as e:
                 error_msg = str(e).lower()

@@ -1541,6 +1541,18 @@ class STM32ProgrammerGUI(QWidget):
 
                 if result == QMessageBox.Ok:
                     self._turn_off_led()
+
+        # Системная перезагрузка UART порта после завершения прошивки
+        if self.current_port:
+            try:
+                from stm32_programmer.programmers.base import reset_uart_system_level
+
+                self.log("Системная перезагрузка UART порта...", msg_type="info")
+                reset_uart_system_level(self.current_port)
+                self.log("UART порт перезагружен на системном уровне", msg_type="info")
+            except Exception as e:
+                logger.warning(f"Ошибка при системной перезагрузке порта: {e}")
+
         self.current_device_id = None
         self.current_port = None
 
