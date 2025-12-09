@@ -180,11 +180,77 @@ def reset_uart_system_level(port_name):
                 time.sleep(2.0)
 
         elif platform.system() == "Windows":
-
-            logger.info(
-                "На Windows системная перезагрузка порта требует дополнительных инструментов"
-            )
-            time.sleep(1.5)
+            
+            try:
+                logger.info("Симуляция отключения USB устройства на Windows...")
+                
+            
+            
+                com_port_num = port_name.replace("COM", "").strip()
+                
+                if com_port_num.isdigit():
+                   
+                    ps_command = f'''
+                    try {{
+                        # Находим COM порт
+                        $port = Get-WmiObject Win32_SerialPort | Where-Object {{ $_.DeviceID -eq "{port_name}" }}
+                        if ($port) {{
+                            # Находим связанное USB устройство
+                            $pnpDevice = Get-PnpDevice | Where-Object {{ $_.InstanceId -eq $port.PNPDeviceID }}
+                            if (-not $pnpDevice) {{
+                                # Пробуем найти по VID/PID
+                                $pnpDevice = Get-PnpDevice | Where-Object {{ $_.FriendlyName -like "*{port_name}*" -or $_.InstanceId -like "*USB*" }}
+                            }}
+                            if ($pnpDevice) {{
+                                $instanceId = $pnpDevice.InstanceId
+                                Write-Output "Найдено устройство: $instanceId"
+                                
+                                # Отключаем устройство
+                                Disable-PnpDevice -InstanceId $instanceId -Confirm:$false -ErrorAction SilentlyContinue
+                                Start-Sleep -Seconds 2
+                                
+                                # Включаем устройство обратно
+                                Enable-PnpDevice -InstanceId $instanceId -Confirm:$false -ErrorAction SilentlyContinue
+                                Write-Output "Устройство перезагружено"
+                            }} else {{
+                                Write-Output "Устройство не найдено"
+                            }}
+                        }} else {{
+                            Write-Output "COM порт не найден"
+                        }}
+                    }} catch {{
+                        Write-Output "Ошибка: $_"
+                    }}
+                    '''
+                    
+                    try:
+                        logger.info("Выполнение PowerShell команды для перезагрузки USB устройства...")
+                        result = subprocess.run(
+                            ["powershell", "-Command", ps_command],
+                            capture_output=True,
+                            text=True,
+                            timeout=20
+                        )
+                        
+                        if result.returncode == 0:
+                            output = result.stdout.strip()
+                            logger.info(f"Результат PowerShell: {output}")
+                            if "перезагружено" in output or "перезагружено" in output.lower():
+                                logger.info("USB устройство успешно перезагружено")
+                            time.sleep(2.0)
+                        else:
+                            logger.warning(f"PowerShell вернул код ошибки {result.returncode}: {result.stderr}")
+                            time.sleep(1.5)
+                    except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+                        logger.warning(f"Ошибка при перезагрузке USB устройства: {e}")
+                        time.sleep(1.5)
+                else:
+                    logger.warning(f"Неверный формат COM порта: {port_name}")
+                    time.sleep(1.5)
+                    
+            except Exception as e:
+                logger.warning(f"Ошибка при симуляции отключения USB на Windows: {e}")
+                time.sleep(1.5)
 
         else:
             try:
