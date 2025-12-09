@@ -693,6 +693,7 @@ def run_test_plan(
     progress_callback=None,
     status_callback=None,
     progress_percent_callback=None,
+    testing_progress_callback=None,
 ):
     logger = logging.getLogger(__name__)
 
@@ -720,14 +721,19 @@ def run_test_plan(
         return False, error_msg
 
     if status_callback:
-        status_callback("Начало тестирования после прошивки...")
+        status_callback("Тестирование...")
 
     all_tests_passed = True
     test_errors = []
     total_steps = len(test_plan)
 
     for step_idx, step in enumerate(test_plan, 1):
-        if progress_percent_callback:
+        
+        if testing_progress_callback:
+            test_progress = int((step_idx / total_steps) * 100)
+            testing_progress_callback(test_progress)
+        elif progress_percent_callback:
+            
             test_progress = 80 + int((step_idx / total_steps) * 20)
             progress_percent_callback(test_progress)
         step_name = step.get("name", f"Шаг {step_idx}")
@@ -1130,7 +1136,9 @@ def run_test_plan(
         logger.info(success_msg)
         if status_callback:
             status_callback(success_msg)
-        if progress_percent_callback:
+        if testing_progress_callback:
+            testing_progress_callback(100)
+        elif progress_percent_callback:
             progress_percent_callback(100)
         return True, success_msg
     else:
@@ -1138,7 +1146,9 @@ def run_test_plan(
         logger.error(error_msg)
         if status_callback:
             status_callback(error_msg)
-        if progress_percent_callback:
+        if testing_progress_callback:
+            testing_progress_callback(100)
+        elif progress_percent_callback:
             progress_percent_callback(100)
         return False, error_msg
 
@@ -1149,6 +1159,8 @@ def program_device(
     progress_callback=None,
     status_callback=None,
     progress_percent_callback=None,
+    programming_progress_callback=None,
+    testing_progress_callback=None,
     stop_check_callback=None,
     uart_port=None,
     device_index=None,
@@ -1255,6 +1267,18 @@ def program_device(
             return False, "Остановлено пользователем"
         time.sleep(1)
 
+        
+        if programmer.selected_uart and programmer.selected_uart.is_open:
+            if progress_callback:
+                progress_callback("->> SET LED4=YELLOW")
+            led_yellow_command = "SET LED4=YELLOW".strip().encode("utf-8") + line_ending_bytes
+            programmer.send_command_uart(
+                led_yellow_command, "LED4=ON".strip().encode("utf-8")
+            )
+            if progress_callback:
+                progress_callback("<<- LED4=ON")
+            time.sleep(0.5)
+
         results = {}
 
         firmware_configs = []
@@ -1271,7 +1295,8 @@ def program_device(
             return False, error_msg
 
         num_modes = len(firmware_configs)
-        mode_progress_range = 80 if num_modes == 1 else 40
+        
+        mode_progress_range = 100 if num_modes == 1 else 50
 
         for mode_idx, (target_mode, firmware_path) in enumerate(firmware_configs):
             if stop_check_callback and stop_check_callback():
@@ -1282,8 +1307,13 @@ def program_device(
                 status_callback(f"Переключение в режим {target_mode}...")
             if progress_callback:
                 progress_callback(f"Переключение режима: {target_mode}")
-            if progress_percent_callback:
-                progress_percent_callback(base_progress + 2)
+            
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 2)
+            elif progress_percent_callback:
+                
+                old_base = mode_idx * (80 if num_modes == 1 else 40)
+                progress_percent_callback(old_base + 2)
 
             if uart_port:
                 logger.info(f"Выбран UART порт: {uart_port}")
@@ -1759,7 +1789,9 @@ def program_device(
                         )
                     if progress_callback:
                         progress_callback("Проверка переключения")
-                    if progress_percent_callback:
+                    if programming_progress_callback:
+                        programming_progress_callback(base_progress + 5)
+                    elif progress_percent_callback:
                         progress_percent_callback(base_progress + 5)
 
                     logger.info(
@@ -1804,7 +1836,9 @@ def program_device(
                         )
                     if progress_callback:
                         progress_callback("Стабилизация")
-                    if progress_percent_callback:
+                    if programming_progress_callback:
+                        programming_progress_callback(base_progress + 8)
+                    elif progress_percent_callback:
                         progress_percent_callback(base_progress + 8)
 
                     logger.warning(
@@ -1815,7 +1849,9 @@ def program_device(
                         if stop_check_callback and stop_check_callback():
                             return False, "Остановлено пользователем"
                         time.sleep(0.1)
-                    if progress_percent_callback:
+                    if programming_progress_callback:
+                        programming_progress_callback(base_progress + 10)
+                    elif progress_percent_callback:
                         progress_percent_callback(base_progress + 10)
 
                     logger.warning(
@@ -1869,7 +1905,9 @@ def program_device(
                 status_callback(f"Загрузка прошивки для режима {target_mode}...")
             if progress_callback:
                 progress_callback(f"Загрузка прошивки: {target_mode}")
-            if progress_percent_callback:
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 15)
+            elif progress_percent_callback:
                 progress_percent_callback(base_progress + 15)
 
             try:
@@ -1892,7 +1930,9 @@ def program_device(
                 status_callback(f"Запись {target_mode} прошивки...")
             if progress_callback:
                 progress_callback(f"Запись прошивки: {target_mode}")
-            if progress_percent_callback:
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 20)
+            elif progress_percent_callback:
                 progress_percent_callback(base_progress + 20)
 
             logger.info(
@@ -1911,7 +1951,9 @@ def program_device(
                 success = write_result
                 error_details = None
 
-            if progress_percent_callback:
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 60)
+            elif progress_percent_callback:
                 progress_percent_callback(base_progress + 60)
 
             if not success:
@@ -1932,7 +1974,9 @@ def program_device(
             if progress_callback:
                 progress_callback("Перезагрузка питания")
                 progress_callback("->> SET EN_12V=OFF")
-            if progress_percent_callback:
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 65)
+            elif progress_percent_callback:
                 progress_percent_callback(base_progress + 65)
 
             from stm32_programmer.utils.uart_settings import UARTSettings
@@ -1956,7 +2000,9 @@ def program_device(
             )
             if progress_callback:
                 progress_callback("<<- EN_12V=ON")
-            if progress_percent_callback:
+            if programming_progress_callback:
+                programming_progress_callback(base_progress + 70)
+            elif progress_percent_callback:
                 progress_percent_callback(base_progress + 70)
 
             logger.warning(f"Результат записи для {target_mode}: успех")
@@ -1965,7 +2011,17 @@ def program_device(
             if status_callback:
                 status_callback(f"{target_mode}: ЗАПИСАН")
 
-            if progress_percent_callback:
+            
+            if programming_progress_callback:
+            
+                if num_modes == 1:
+                    programming_progress_callback(100)
+                elif target_mode == "LV":
+                    programming_progress_callback(50)
+                elif target_mode == "HV":
+                    programming_progress_callback(100)
+            elif progress_percent_callback:
+                
                 if target_mode == "LV" and num_modes == 2:
                     progress_percent_callback(40)
                 elif target_mode == "LV" and num_modes == 1:
@@ -1978,7 +2034,9 @@ def program_device(
                     status_callback("Переподключение устройства после записи LV...")
                 if progress_callback:
                     progress_callback("Переподключение устройства")
-                if progress_percent_callback:
+                if programming_progress_callback:
+                    programming_progress_callback(base_progress + 75)
+                elif progress_percent_callback:
                     progress_percent_callback(base_progress + 75)
 
                 logger.warning("ожидание стабилизации устройства после записи LV...")
@@ -2035,7 +2093,9 @@ def program_device(
                             return False, "Остановлено пользователем"
                         time.sleep(0.1)
 
-                if progress_percent_callback and num_modes == 2:
+                if programming_progress_callback and num_modes == 2:
+                    programming_progress_callback(50)
+                elif progress_percent_callback and num_modes == 2:
                     progress_percent_callback(40)
 
         success = all(results.values()) if results else False
@@ -2053,6 +2113,7 @@ def program_device(
                     progress_callback=progress_callback,
                     status_callback=status_callback,
                     progress_percent_callback=progress_percent_callback,
+                    testing_progress_callback=testing_progress_callback,
                 )
 
                 if test_success:
@@ -2073,6 +2134,38 @@ def program_device(
             if status_callback:
                 status_callback(error_msg)
 
+        
+        final_success = success and (test_success is None or test_success)
+        
+        
+        if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
+            try:
+                from stm32_programmer.utils.uart_settings import UARTSettings
+                uart_settings = UARTSettings()
+                line_ending_bytes = uart_settings.get_line_ending_bytes()
+                
+                if final_success:
+                    if progress_callback:
+                        progress_callback("->> SET LED4=GREEN")
+                    led_command = "SET LED4=GREEN".strip().encode("utf-8") + line_ending_bytes
+                    programmer.send_command_uart(
+                        led_command, "LED4=ON".strip().encode("utf-8")
+                    )
+                    if progress_callback:
+                        progress_callback("<<- LED4=ON")
+                else:
+                    if progress_callback:
+                        progress_callback("->> SET LED4=RED")
+                    led_command = "SET LED4=RED".strip().encode("utf-8") + line_ending_bytes
+                    programmer.send_command_uart(
+                        led_command, "LED4=ON".strip().encode("utf-8")
+                    )
+                    if progress_callback:
+                        progress_callback("<<- LED4=ON")
+                time.sleep(0.5)
+            except Exception as led_error:
+                logger.warning(f"Ошибка при отправке команды LED: {led_error}")
+
         if success:
             if test_success is None or test_success:
                 return True, "Успех. Все тесты пройдены." if test_success else "Успех"
@@ -2084,6 +2177,24 @@ def program_device(
 
     except Exception as e:
         import traceback
+
+        
+        if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
+            try:
+                from stm32_programmer.utils.uart_settings import UARTSettings
+                uart_settings = UARTSettings()
+                line_ending_bytes = uart_settings.get_line_ending_bytes()
+                if progress_callback:
+                    progress_callback("->> SET LED4=RED")
+                led_command = "SET LED4=RED".strip().encode("utf-8") + line_ending_bytes
+                programmer.send_command_uart(
+                    led_command, "LED4=ON".strip().encode("utf-8")
+                )
+                if progress_callback:
+                    progress_callback("<<- LED4=ON")
+                time.sleep(0.5)
+            except Exception as led_error:
+                logger.warning(f"Ошибка при отправке команды LED: {led_error}")
 
         error_msg = f"Критическая ошибка: {e}"
         logger.error("=" * 80)

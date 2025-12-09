@@ -333,8 +333,11 @@ class BaseProgrammer:
                 from .stlink import STLinkProgrammer
 
                 attempted_methods.append("STLinkProgrammer (прямой USB)")
-                logger.info("попытка записи через прямой USB доступ (STLinkProgrammer)")
-                logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
+                logger.info("=" * 80)
+                logger.info("ПОПЫТКА ЗАПИСИ ЧЕРЕЗ ПРЯМОЙ USB ДОСТУП (STLinkProgrammer)")
+                logger.info(f"Размер данных: {len(data)} байт")
+                logger.info(f"Адрес записи: {hex(address)}")
+                logger.info("=" * 80)
                 programmer = STLinkProgrammer(self.selected)
                 success = programmer.write_bytes(data, address)
 
@@ -350,7 +353,14 @@ class BaseProgrammer:
                 if success:
                     logger.info("запись выполнена через прямой USB доступ")
                 else:
-                    last_error = "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)"
+                    last_error = (
+                        "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)\n"
+                        "Возможные причины:\n"
+                        "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
+                        "  - Устройство не подключено или не включено\n"
+                        "  - Проблемы с драйверами ST-Link\n"
+                        "Решение: закройте STM32CubeProgrammer и попробуйте снова"
+                    )
                     logger.warning(f"запись через прямой USB доступ не удалась")
             except Exception as e:
                 attempted_methods.append(f"STLinkProgrammer (ошибка: {e})")

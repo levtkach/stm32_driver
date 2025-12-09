@@ -259,7 +259,15 @@ class STLinkProgrammer:
         try:
             logger.info("Проверка подключения к целевому устройству...")
             if not self._check_target_connection():
-                logger.error("Ошибка: не удалось подключиться к целевому устройству")
+                error_msg = (
+                    "Ошибка: не удалось подключиться к целевому устройству\n"
+                    "Возможные причины:\n"
+                    "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
+                    "  - Устройство не подключено или не включено\n"
+                    "  - Проблемы с драйверами ST-Link\n"
+                    "Решение: закройте STM32CubeProgrammer и попробуйте снова"
+                )
+                logger.error(error_msg)
                 return False
             logger.info("Подключение к целевому устройству установлено")
 
@@ -287,9 +295,35 @@ class STLinkProgrammer:
                     f"{len(block)} байт по адресу {hex(block_address)}"
                 )
 
-                block_success = self._write_memory(block_address, block)
-                if not block_success:
-                    logger.error(f"Ошибка записи блока по адресу {hex(block_address)}")
+                try:
+                    block_success = self._write_memory(block_address, block)
+                    if not block_success:
+                        logger.error(f"Ошибка записи блока по адресу {hex(block_address)}")
+                        success = False
+                        break
+                except (ValueError, OSError, IOError) as e:
+                    error_msg_lower = str(e).lower()
+                    if "closed" in error_msg_lower or "operation on closed" in error_msg_lower:
+                        error_msg = (
+                            f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n"
+                            f"Ошибка: {e}\n"
+                            "Возможные причины:\n"
+                            "  - USB устройство было закрыто другим процессом (STM32CubeProgrammer) 🤔\n"
+                            "  - Устройство было отключено во время записи\n"
+                            "Решение:\n"
+                            "  1. Закройте STM32CubeProgrammer, если он открыт\n"
+                            "  2. Проверьте USB соединение\n"
+                            "  3. Переподключите устройство"
+                        )
+                        logger.error(error_msg)
+                        success = False
+                        break
+                    else:
+                        logger.error(f"Ошибка при записи блока: {e}")
+                        success = False
+                        break
+                except Exception as e:
+                    logger.error(f"Неожиданная ошибка при записи блока: {e}")
                     success = False
                     break
 
@@ -305,6 +339,28 @@ class STLinkProgrammer:
 
             return success
 
+        except (ValueError, OSError, IOError) as e:
+            error_msg_lower = str(e).lower()
+            if "closed" in error_msg_lower or "operation on closed" in error_msg_lower:
+                error_msg = (
+                    f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n"
+                    f"Ошибка: {e}\n"
+                    "Возможные причины:\n"
+                    "  - USB устройство было закрыто другим процессом (STM32CubeProgrammer) 🤔\n"
+                    "  - Устройство было отключено во время записи\n"
+                    "Решение:\n"
+                    "  1. Закройте STM32CubeProgrammer, если он открыт\n"
+                    "  2. Проверьте USB соединение\n"
+                    "  3. Переподключите устройство"
+                )
+                logger.error(error_msg)
+            else:
+                logger.exception(f"Исключение при записи: {e}")
+            try:
+                self._exit_debug_mode()
+            except:
+                pass
+            return False
         except Exception as e:
             logger.exception(f"Исключение при записи: {e}")
             try:
@@ -323,9 +379,15 @@ class STLinkProgrammer:
         try:
             logger.info(f"проверка подключения к целевому устройству для чтения...")
             if not self._check_target_connection():
-                logger.warning(
-                    "не удалось подключиться к целевому устройству для чтения"
+                warning_msg = (
+                    "не удалось подключиться к целевому устройству для чтения\n"
+                    "Возможные причины:\n"
+                    "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
+                    "  - Устройство не подключено или не включено\n"
+                    "  - Проблемы с драйверами ST-Link\n"
+                    "Решение: закройте STM32CubeProgrammer и попробуйте снова"
                 )
+                logger.warning(warning_msg)
                 return b""
 
             logger.info("вход в режим отладки для чтения...")
