@@ -122,10 +122,10 @@
       },
       {
         "name": "Демонстрация LED4: установка yellow",
-        "command": "SET LED4=YELLOW",
+        "command": "SET LED4=BLINK_ON",
         "expected_response": "LED4=ON",
         "wait_time": 1,
-        "description": "Демонстрация установки LED4 в YELLOW"
+        "description": "Демонстрация установки LED4 в BLINK_ON"
       },
       {
         "name": "Демонстрация LED4: установка blink_on",
