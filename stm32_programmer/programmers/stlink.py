@@ -298,12 +298,17 @@ class STLinkProgrammer:
                 try:
                     block_success = self._write_memory(block_address, block)
                     if not block_success:
-                        logger.error(f"Ошибка записи блока по адресу {hex(block_address)}")
+                        logger.error(
+                            f"Ошибка записи блока по адресу {hex(block_address)}"
+                        )
                         success = False
                         break
                 except (ValueError, OSError, IOError) as e:
                     error_msg_lower = str(e).lower()
-                    if "closed" in error_msg_lower or "operation on closed" in error_msg_lower:
+                    if (
+                        "closed" in error_msg_lower
+                        or "operation on closed" in error_msg_lower
+                    ):
                         error_msg = (
                             f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n"
                             f"Ошибка: {e}\n"

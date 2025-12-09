@@ -502,20 +502,22 @@ class STM32ProgrammerGUI(QWidget):
         self.console.setFont(font)
         layout.addWidget(self.console)
 
-        
         self.programming_progress_bar = QProgressBar()
         self.programming_progress_bar.setRange(0, 100)
         self.programming_progress_bar.setTextVisible(True)
         self.programming_progress_bar.setFormat("Программирование: %p%")
-        self.programming_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.programming_progress_bar.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
         self.programming_progress_bar.hide()
 
-        
         self.testing_progress_bar = QProgressBar()
         self.testing_progress_bar.setRange(0, 100)
         self.testing_progress_bar.setTextVisible(True)
         self.testing_progress_bar.setFormat("Тестирование: %p%")
-        self.testing_progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.testing_progress_bar.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
         self.testing_progress_bar.hide()
 
         self.current_process_label = QLabel()
@@ -1388,15 +1390,14 @@ class STM32ProgrammerGUI(QWidget):
         )
         self.log(message, msg_type=msg_type)
         message_upper = message.upper()
-        
-        
+
         if "ТЕСТИРОВАНИЕ" in message_upper or message == "Тестирование...":
             self.current_process_label.setText("Тестирование...")
             self.current_process_label.setStyleSheet(
                 "color: #ffb86c; font-weight: 500; padding: 4px;"
             )
             self.current_process_label.show()
-        
+
         if "LV" in message_upper and "ЗАПИСАН" in message_upper:
             self.lv_status = True
         elif "HV" in message_upper and "ЗАПИСАН" in message_upper:
@@ -1411,7 +1412,7 @@ class STM32ProgrammerGUI(QWidget):
             self.hv_status = False
 
     def on_progress_percent_updated(self, percent):
-        
+
         pass
 
     def on_programming_progress_updated(self, percent):
@@ -1424,7 +1425,7 @@ class STM32ProgrammerGUI(QWidget):
         if self.is_stopping:
             return
         if 0 <= percent <= 100:
-            
+
             if not self.testing_progress_bar.isVisible():
                 self.testing_progress_bar.show()
             self.testing_progress_bar.setValue(percent)
@@ -1492,9 +1493,12 @@ class STM32ProgrammerGUI(QWidget):
                     QMessageBox.Critical,
                 )
             else:
-                
+
                 error_details = message
-                if "I/O operation on closed file" in message or "operation on closed" in message.lower():
+                if (
+                    "I/O operation on closed file" in message
+                    or "operation on closed" in message.lower()
+                ):
                     error_details = (
                         "КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n\n"
                         "Не удалось записать прошивку из-за закрытого файла/устройства.\n\n"
@@ -1523,7 +1527,7 @@ class STM32ProgrammerGUI(QWidget):
                         f"Ошибка записи прошивки:\n\n{message}\n\n"
                         "Проверьте логи для подробной информации."
                     )
-                
+
                 self.show_message_box(
                     "Ошибка",
                     error_details,
@@ -1567,7 +1571,7 @@ class STM32ProgrammerGUI(QWidget):
         self.setStyleSheet(stylesheet)
         if hasattr(self, "serial_monitor"):
             self.serial_monitor.setStyleSheet(stylesheet)
-        
+
         # Применяем стили к прогресс-барам в зависимости от темы
         if theme == "dark":
             border_color = "#44475a"
@@ -1575,9 +1579,10 @@ class STM32ProgrammerGUI(QWidget):
         else:
             border_color = "#cbd5e0"
             text_color = "#2d2d2d"
-        
+
         if hasattr(self, "programming_progress_bar"):
-            self.programming_progress_bar.setStyleSheet(f"""
+            self.programming_progress_bar.setStyleSheet(
+                f"""
                 QProgressBar {{
                     border: 1px solid {border_color};
                     border-radius: 6px;
@@ -1592,10 +1597,12 @@ class STM32ProgrammerGUI(QWidget):
                         stop: 0 #50fa7b, stop: 1 #5af78e);
                     border-radius: 5px;
                 }}
-            """)
-        
+            """
+            )
+
         if hasattr(self, "testing_progress_bar"):
-            self.testing_progress_bar.setStyleSheet(f"""
+            self.testing_progress_bar.setStyleSheet(
+                f"""
                 QProgressBar {{
                     border: 1px solid {border_color};
                     border-radius: 6px;
@@ -1610,4 +1617,5 @@ class STM32ProgrammerGUI(QWidget):
                         stop: 0 #ffb86c, stop: 1 #ffaa00);
                     border-radius: 5px;
                 }}
-            """)
+            """
+            )

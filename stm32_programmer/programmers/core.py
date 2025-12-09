@@ -728,12 +728,12 @@ def run_test_plan(
     total_steps = len(test_plan)
 
     for step_idx, step in enumerate(test_plan, 1):
-        
+
         if testing_progress_callback:
             test_progress = int((step_idx / total_steps) * 100)
             testing_progress_callback(test_progress)
         elif progress_percent_callback:
-            
+
             test_progress = 80 + int((step_idx / total_steps) * 20)
             progress_percent_callback(test_progress)
         step_name = step.get("name", f"Шаг {step_idx}")
@@ -1267,11 +1267,12 @@ def program_device(
             return False, "Остановлено пользователем"
         time.sleep(1)
 
-        
         if programmer.selected_uart and programmer.selected_uart.is_open:
             if progress_callback:
                 progress_callback("->> SET LED4=YELLOW")
-            led_yellow_command = "SET LED4=YELLOW".strip().encode("utf-8") + line_ending_bytes
+            led_yellow_command = (
+                "SET LED4=YELLOW".strip().encode("utf-8") + line_ending_bytes
+            )
             programmer.send_command_uart(
                 led_yellow_command, "LED4=ON".strip().encode("utf-8")
             )
@@ -1295,7 +1296,7 @@ def program_device(
             return False, error_msg
 
         num_modes = len(firmware_configs)
-        
+
         mode_progress_range = 100 if num_modes == 1 else 50
 
         for mode_idx, (target_mode, firmware_path) in enumerate(firmware_configs):
@@ -1307,11 +1308,11 @@ def program_device(
                 status_callback(f"Переключение в режим {target_mode}...")
             if progress_callback:
                 progress_callback(f"Переключение режима: {target_mode}")
-            
+
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 2)
             elif progress_percent_callback:
-                
+
                 old_base = mode_idx * (80 if num_modes == 1 else 40)
                 progress_percent_callback(old_base + 2)
 
@@ -2011,9 +2012,8 @@ def program_device(
             if status_callback:
                 status_callback(f"{target_mode}: ЗАПИСАН")
 
-            
             if programming_progress_callback:
-            
+
                 if num_modes == 1:
                     programming_progress_callback(100)
                 elif target_mode == "LV":
@@ -2021,7 +2021,7 @@ def program_device(
                 elif target_mode == "HV":
                     programming_progress_callback(100)
             elif progress_percent_callback:
-                
+
                 if target_mode == "LV" and num_modes == 2:
                     progress_percent_callback(40)
                 elif target_mode == "LV" and num_modes == 1:
@@ -2134,20 +2134,21 @@ def program_device(
             if status_callback:
                 status_callback(error_msg)
 
-        
         final_success = success and (test_success is None or test_success)
-        
-        
+
         if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
             try:
                 from stm32_programmer.utils.uart_settings import UARTSettings
+
                 uart_settings = UARTSettings()
                 line_ending_bytes = uart_settings.get_line_ending_bytes()
-                
+
                 if final_success:
                     if progress_callback:
                         progress_callback("->> SET LED4=GREEN")
-                    led_command = "SET LED4=GREEN".strip().encode("utf-8") + line_ending_bytes
+                    led_command = (
+                        "SET LED4=GREEN".strip().encode("utf-8") + line_ending_bytes
+                    )
                     programmer.send_command_uart(
                         led_command, "LED4=ON".strip().encode("utf-8")
                     )
@@ -2156,7 +2157,9 @@ def program_device(
                 else:
                     if progress_callback:
                         progress_callback("->> SET LED4=RED")
-                    led_command = "SET LED4=RED".strip().encode("utf-8") + line_ending_bytes
+                    led_command = (
+                        "SET LED4=RED".strip().encode("utf-8") + line_ending_bytes
+                    )
                     programmer.send_command_uart(
                         led_command, "LED4=ON".strip().encode("utf-8")
                     )
@@ -2178,10 +2181,10 @@ def program_device(
     except Exception as e:
         import traceback
 
-        
         if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
             try:
                 from stm32_programmer.utils.uart_settings import UARTSettings
+
                 uart_settings = UARTSettings()
                 line_ending_bytes = uart_settings.get_line_ending_bytes()
                 if progress_callback:
