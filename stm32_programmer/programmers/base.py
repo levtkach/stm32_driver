@@ -138,7 +138,7 @@ class BaseProgrammer:
         self.selected_uart = None
 
     def close_uart(self):
-        """Корректно закрывает UART подключение"""
+        """Корректно закрывает UART подключение и полностью очищает буферы"""
         if self.selected_uart:
             try:
                 port_name = (
@@ -150,17 +150,30 @@ class BaseProgrammer:
                     logger.info(f"закрытие UART порта {port_name}")
                     try:
 
+                        if self.selected_uart.in_waiting > 0:
+                            logger.info(
+                                f"очистка входного буфера: {self.selected_uart.in_waiting} байт"
+                            )
+                            self.selected_uart.read(self.selected_uart.in_waiting)
                         self.selected_uart.reset_input_buffer()
                         self.selected_uart.reset_output_buffer()
-                    except:
-                        pass
+
+                        if self.selected_uart.in_waiting > 0:
+                            remaining = self.selected_uart.read(
+                                self.selected_uart.in_waiting
+                            )
+                            logger.info(
+                                f"дополнительная очистка: {len(remaining)} байт"
+                            )
+                    except Exception as e:
+                        logger.warning(f"ошибка при очистке буферов: {e}")
 
                     self.selected_uart.close()
 
                     import time
 
                     time.sleep(0.1)
-                    logger.info("UART порт закрыт")
+                    logger.info("UART порт закрыт и буферы очищены")
                 self.selected_uart = None
             except (ValueError, OSError, IOError) as e:
                 error_msg = str(e).lower()

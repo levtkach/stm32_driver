@@ -1131,6 +1131,27 @@ def run_test_plan(
                         status_callback(f"  - {error}")
             logger.info("=" * 80)
 
+    if programmer.selected_uart and programmer.selected_uart.is_open:
+        try:
+            from stm32_programmer.utils.uart_settings import UARTSettings
+
+            uart_settings = UARTSettings()
+            line_ending_bytes = uart_settings.get_line_ending_bytes()
+
+            if progress_callback:
+                progress_callback("->> SET LED4=BLINK_OFF")
+            led_blink_off_command = (
+                "SET LED4=BLINK_OFF".strip().encode("utf-8") + line_ending_bytes
+            )
+            programmer.send_command_uart(
+                led_blink_off_command, "LED4=BLINK_OFF".strip().encode("utf-8")
+            )
+            if progress_callback:
+                progress_callback("<<- LED4=BLINK_OFF")
+            time.sleep(0.3)
+        except Exception as e:
+            logger.warning(f"Ошибка при отправке команды LED4=BLINK_OFF: {e}")
+
     if all_tests_passed:
         success_msg = "Все тесты пройдены успешно!"
         logger.info(success_msg)
@@ -1240,6 +1261,8 @@ def program_device(
                 )
             except Exception as e:
                 logger.warning(f"ошибка при очистке буферов: {e}")
+            # Дополнительная задержка после очистки буферов
+            time.sleep(0.5)
 
         if progress_callback:
             progress_callback("->> SET EN_12V=ON")
@@ -1248,13 +1271,29 @@ def program_device(
         uart_settings = UARTSettings()
         line_ending_bytes = uart_settings.get_line_ending_bytes()
         command = "SET EN_12V=ON".strip().encode("utf-8") + line_ending_bytes
-        en_12v_success = programmer.send_command_uart(
-            command, "EN_12V=ON".strip().encode("utf-8")
-        )
-        if not en_12v_success:
-            error_msg = (
-                "Не удалось включить питание (EN_12V=ON): устройство не ответило"
+
+        max_retries = 3
+        en_12v_success = False
+        for attempt in range(max_retries):
+            if attempt > 0:
+                logger.info(
+                    f"Повторная попытка отправки EN_12V=ON (попытка {attempt + 1}/{max_retries})..."
+                )
+                time.sleep(0.5)
+
+            en_12v_success = programmer.send_command_uart(
+                command, "EN_12V=ON".strip().encode("utf-8")
             )
+            if en_12v_success:
+                logger.info(f"EN_12V=ON успешно отправлена (попытка {attempt + 1})")
+                break
+            else:
+                logger.warning(
+                    f"EN_12V=ON не получила ответ (попытка {attempt + 1}/{max_retries})"
+                )
+
+        if not en_12v_success:
+            error_msg = f"Не удалось включить питание (EN_12V=ON): устройство не ответило после {max_retries} попыток"
             logger.error(error_msg)
             if status_callback:
                 status_callback(error_msg)
@@ -1279,8 +1318,7 @@ def program_device(
             if progress_callback:
                 progress_callback("<<- LED4=ON")
             time.sleep(0.5)
-            
-            
+
             if progress_callback:
                 progress_callback("->> SET LED4=BLINK_ON")
             led_blink_command = (
@@ -2149,6 +2187,10 @@ def program_device(
 
         final_success = success and (test_success is None or test_success)
 
+        logger.info(
+            f"Финальный результат: success={success}, test_success={test_success}, final_success={final_success}"
+        )
+
         if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
             try:
                 from stm32_programmer.utils.uart_settings import UARTSettings
@@ -2157,6 +2199,7 @@ def program_device(
                 line_ending_bytes = uart_settings.get_line_ending_bytes()
 
                 if final_success:
+                    logger.info("Включение зеленого светодиода (успех)")
                     if progress_callback:
                         progress_callback("->> SET LED4=GREEN")
                     led_command = (
@@ -2168,6 +2211,7 @@ def program_device(
                     if progress_callback:
                         progress_callback("<<- LED4=ON")
                 else:
+                    logger.info("Включение красного светодиода (ошибка)")
                     if progress_callback:
                         progress_callback("->> SET LED4=RED")
                     led_command = (

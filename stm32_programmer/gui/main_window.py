@@ -290,6 +290,8 @@ class STM32ProgrammerGUI(QWidget):
         if buttons is None:
             buttons = QMessageBox.Ok
 
+        return msg_box.exec_()
+
         if buttons == (QMessageBox.Yes | QMessageBox.No):
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             yes_button = msg_box.button(QMessageBox.Yes)
@@ -1487,11 +1489,14 @@ class STM32ProgrammerGUI(QWidget):
                 "ОШИБКА: Тестирование не пройдено" in message
                 or "Тестирование не пройдено" in message
             ):
-                self.show_message_box(
+                result = self.show_message_box(
                     "Ошибка тестирования",
                     f"Прошивка записана, но тестирование не пройдено!\n\n{message}",
                     QMessageBox.Critical,
                 )
+
+                if result == QMessageBox.Ok:
+                    self._turn_off_led()
             else:
 
                 error_details = message
@@ -1528,13 +1533,43 @@ class STM32ProgrammerGUI(QWidget):
                         "Проверьте логи для подробной информации."
                     )
 
-                self.show_message_box(
+                result = self.show_message_box(
                     "Ошибка",
                     error_details,
                     QMessageBox.Critical,
                 )
+
+                if result == QMessageBox.Ok:
+                    self._turn_off_led()
         self.current_device_id = None
         self.current_port = None
+
+    def _turn_off_led(self):
+        """Выключает светодиод LED4 после ошибки"""
+        try:
+            if (
+                self.programmer
+                and self.programmer.selected_uart
+                and self.programmer.selected_uart.is_open
+            ):
+                from stm32_programmer.utils.uart_settings import UARTSettings
+
+                uart_settings = UARTSettings()
+                line_ending_bytes = uart_settings.get_line_ending_bytes()
+
+                self.log("->> SET LED4=OFF", msg_type="command")
+                led_off_command = (
+                    "SET LED4=OFF".strip().encode("utf-8") + line_ending_bytes
+                )
+                success = self.programmer.send_command_uart(
+                    led_off_command, "LED4=OFF".strip().encode("utf-8")
+                )
+                if success:
+                    self.log("<<- LED4=OFF", msg_type="response")
+                else:
+                    self.log("Не получен ответ на команду LED4=OFF", msg_type="warning")
+        except Exception as e:
+            self.log(f"Ошибка при выключении светодиода: {e}", msg_type="error")
 
     def open_log_file(self):
         import os
