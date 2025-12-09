@@ -1,31 +1,35 @@
 # STM32 Programmer
 
-Программа для прошивки микроконтроллеров STM32 через стандартный программатор ST-Link.
+Программа для прошивки микроконтроллеров STM32 через ST-Link программатор.
 
 ## Возможности
 
-- Прошивка плат STM32 через ST-Link программатор
-- Поддержка различных методов программирования:
-  - ST-Link с использованием библиотеки pystlink
-  - ST-Link через OpenOCD
-  - ST-Link через STM32CubeProgrammer
-- Работа с платой тестирования ЦСУ
+- Прошивка плат STM32 через ST-Link
+- Поддержка методов: pystlink, OpenOCD, STM32CubeProgrammer
+- GUI и CLI интерфейсы
+- Автоматическое тестирование после прошивки
+- Работа с UART для управления режимами
 
 ## Установка
 
 ```bash
 pip install -r requirements.txt
 ```
-В директорию firmware положить файлы firmware/PS1200_master.hex, firmware/PS1200_slave.hex
 
 ## Использование
 
+GUI:
 ```bash
-python stm32_programmer.py
+python main_gui.py
+```
+
+CLI:
+```bash
+python main_cli.py
 ```
 
 ## Требования
 
 - Python 3.6+
 - ST-Link программатор
-- Поддерживаемые микроконтроллеры STM32
+- STM32 микроконтроллер
