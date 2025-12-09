@@ -46,6 +46,8 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
         if line_ending is None:
             line_ending = uart_settings.get_line_ending()
 
+    time.sleep(0.1)
+
     try:
 
         port_timeout = 3.0 if sys.platform == "win32" else 1.0
@@ -83,6 +85,44 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
             raise serial.SerialException(f"Не удалось открыть {port_name}")
 
     except serial.SerialException as e:
+        error_msg = str(e).lower()
+        if (
+            "access is denied" in error_msg
+            or "permission denied" in error_msg
+            or "busy" in error_msg
+        ):
+            logger.warning(f"Порт {port_name} занят, ожидание освобождения...")
+
+            time.sleep(0.5)
+            try:
+                serial_port = serial.Serial(
+                    port=port_name,
+                    baudrate=baudrate,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
+                    timeout=port_timeout,
+                    xonxoff=False,
+                    rtscts=False,
+                    dsrdtr=False,
+                )
+                serial_port.dtr = False
+                serial_port.rts = False
+                if serial_port.is_open:
+                    logger.info(
+                        f"[UART] подключено к {port_name} после повторной попытки"
+                    )
+                    time.sleep(0.2)
+                    try:
+                        serial_port.reset_input_buffer()
+                        serial_port.reset_output_buffer()
+                    except:
+                        pass
+                    return serial_port
+            except Exception as e2:
+                raise serial.SerialException(
+                    f"Ошибка подключения к {port_name} после повторной попытки: {e2}"
+                )
         raise serial.SerialException(f"Ошибка подключения к {port_name}: {e}")
     except Exception as e:
         raise Exception(f"Ошибка при открытии порта {port_name}: {e}")
@@ -1480,6 +1520,9 @@ def program_device(
                     progress_percent_callback(40)
 
         success = all(results.values()) if results else False
+        test_success = None
+        test_message = None
+
         if success:
             if status_callback:
                 status_callback("Результат: УСПЕХ")
@@ -1497,21 +1540,59 @@ def program_device(
                     if status_callback:
                         status_callback("Все тесты пройдены успешно!")
                     logger.info("Тестирование завершено успешно")
-                    return True, "Успех. Все тесты пройдены."
                 else:
                     error_msg = f"ОШИБКА: Тестирование не пройдено!\n\n{test_message}"
                     if status_callback:
                         status_callback(error_msg)
                     logger.error(f"Тестирование не пройдено: {test_message}")
-                    return False, error_msg
             else:
                 logger.warning("UART порт не открыт, пропускаем тестирование")
-                return True, "Успех"
+                test_success = True  # Нет тестирования - считаем успехом
         else:
             failed_modes = [mode for mode, result in results.items() if not result]
             error_msg = f"Ошибка записи для режимов: {', '.join(failed_modes)}"
             if status_callback:
                 status_callback(error_msg)
+
+        if programmer.selected_uart:
+            try:
+
+                if programmer.selected_uart.is_open:
+                    if status_callback:
+                        status_callback("Выключение питания (финальное)...")
+                    if progress_callback:
+                        progress_callback("->> SET EN_12V=OFF")
+                    from stm32_programmer.utils.uart_settings import UARTSettings
+
+                    uart_settings = UARTSettings()
+                    line_ending_bytes = uart_settings.get_line_ending_bytes()
+                    command_off = (
+                        "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
+                    )
+                    programmer.send_command_uart(
+                        command_off, "EN_12V=OFF".strip().encode("utf-8")
+                    )
+                    if progress_callback:
+                        progress_callback("<<- EN_12V=OFF")
+                    logger.info("Питание выключено в конце процесса")
+                    time.sleep(0.5)
+                else:
+                    logger.warning(
+                        "UART порт уже закрыт, пропускаем выключение питания"
+                    )
+            except (ValueError, OSError, IOError) as e:
+
+                logger.warning(f"Не удалось выключить питание (порт закрыт): {e}")
+            except Exception as e:
+                logger.warning(f"Неожиданная ошибка при выключении питания: {e}")
+
+        if success:
+            if test_success is None or test_success:
+                return True, "Успех. Все тесты пройдены." if test_success else "Успех"
+            else:
+                error_msg = f"ОШИБКА: Тестирование не пройдено!\n\n{test_message}"
+                return False, error_msg
+        else:
             return False, error_msg
 
     except Exception as e:

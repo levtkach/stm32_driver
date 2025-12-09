@@ -141,10 +141,33 @@ class BaseProgrammer:
         """Корректно закрывает UART подключение"""
         if self.selected_uart:
             try:
+                port_name = (
+                    self.selected_uart.port
+                    if hasattr(self.selected_uart, "port")
+                    else "unknown"
+                )
                 if self.selected_uart.is_open:
-                    logger.info(f"закрытие UART порта {self.selected_uart.port}")
+                    logger.info(f"закрытие UART порта {port_name}")
+                    try:
+
+                        self.selected_uart.reset_input_buffer()
+                        self.selected_uart.reset_output_buffer()
+                    except:
+                        pass
+
                     self.selected_uart.close()
+
+                    import time
+
+                    time.sleep(0.1)
                     logger.info("UART порт закрыт")
+                self.selected_uart = None
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.debug(f"Порт уже был закрыт: {e}")
+                else:
+                    logger.warning(f"ошибка при закрытии UART порта: {e}")
                 self.selected_uart = None
             except Exception as e:
                 logger.warning(f"ошибка при закрытии UART порта: {e}")
@@ -708,13 +731,29 @@ class BaseProgrammer:
         logger.debug(f"uart in_waiting до очистки: {self.selected_uart.in_waiting}")
 
         try:
+
+            if not self.selected_uart.is_open:
+                logger.error("UART порт закрыт во время выполнения команды")
+                return False
             bytes_before_reset = self.selected_uart.in_waiting
             self.selected_uart.reset_input_buffer()
             logger.debug(f"буфер очищен, было байт: {bytes_before_reset}")
+        except (ValueError, OSError, IOError) as e:
+            error_msg = str(e).lower()
+            if "closed" in error_msg or "operation on closed" in error_msg:
+                logger.error(f"Порт закрыт во время очистки буфера: {e}")
+            else:
+                logger.warning(f"ошибка при очистке буфера: {e}")
+            return False
         except Exception as e:
             logger.warning(f"ошибка при очистке буфера: {e}")
+            return False
 
         try:
+
+            if not self.selected_uart.is_open:
+                logger.error("UART порт закрыт перед записью команды")
+                return False
             write_start = time.time()
             bytes_written = self.selected_uart.write(command)
             self.selected_uart.flush()
@@ -722,6 +761,16 @@ class BaseProgrammer:
             logger.debug(
                 f"команда записана: {bytes_written} байт за {write_duration:.4f} сек"
             )
+        except (ValueError, OSError, IOError) as e:
+            error_msg = str(e).lower()
+            if "closed" in error_msg or "operation on closed" in error_msg:
+                logger.error(f"Порт закрыт во время записи команды: {e}")
+            else:
+                logger.error(f"ошибка при записи команды: {e}")
+            import traceback
+
+            logger.error(f"трассировка: {traceback.format_exc()}")
+            return False
         except Exception as e:
             logger.error(f"ошибка при записи команды: {e}")
             import traceback
@@ -741,40 +790,56 @@ class BaseProgrammer:
         try:
             read_attempts = 0
             while (time.time() - start_time) < max_wait_time:
+
+                if not self.selected_uart.is_open:
+                    logger.warning("UART порт закрыт во время чтения ответа")
+                    break
+
                 elapsed = time.time() - start_time
                 read_attempts += 1
 
-                if self.selected_uart.in_waiting > 0:
-                    bytes_to_read = self.selected_uart.in_waiting
-                    logger.debug(
-                        f"попытка {read_attempts}: доступно {bytes_to_read} байт, прошло {elapsed:.3f} сек"
-                    )
-
-                    data = self.selected_uart.read(bytes_to_read)
-                    if data:
-                        buffer += data
+                try:
+                    if self.selected_uart.in_waiting > 0:
+                        bytes_to_read = self.selected_uart.in_waiting
                         logger.debug(
-                            f"прочитано {len(data)} байт, всего в буфере: {len(buffer)} байт"
-                        )
-                        logger.debug(f"данные (hex): {data.hex()[:100]}...")
-                        logger.debug(
-                            f"данные (text): {data.decode('utf-8', errors='replace')[:100]}"
+                            f"попытка {read_attempts}: доступно {bytes_to_read} байт, прошло {elapsed:.3f} сек"
                         )
 
-                        if b"\n" in buffer or b"\r" in buffer:
-                            logger.debug("найден символ конца строки, прерываем чтение")
-                            break
-
-                        if expected_response in buffer:
+                        data = self.selected_uart.read(bytes_to_read)
+                        if data:
+                            buffer += data
                             logger.debug(
-                                "найден ожидаемый ответ в буфере, прерываем чтение"
+                                f"прочитано {len(data)} байт, всего в буфере: {len(buffer)} байт"
                             )
-                            break
-                else:
-                    if read_attempts % 50 == 0:
-                        logger.debug(
-                            f"попытка {read_attempts}: нет данных, прошло {elapsed:.3f} сек"
-                        )
+                            logger.debug(f"данные (hex): {data.hex()[:100]}...")
+                            logger.debug(
+                                f"данные (text): {data.decode('utf-8', errors='replace')[:100]}"
+                            )
+
+                            if b"\n" in buffer or b"\r" in buffer:
+                                logger.debug(
+                                    "найден символ конца строки, прерываем чтение"
+                                )
+                                break
+
+                            if expected_response in buffer:
+                                logger.debug(
+                                    "найден ожидаемый ответ в буфере, прерываем чтение"
+                                )
+                                break
+                    else:
+                        if read_attempts % 50 == 0:
+                            logger.debug(
+                                f"попытка {read_attempts}: нет данных, прошло {elapsed:.3f} сек"
+                            )
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.warning(f"Порт закрыт во время чтения: {e}")
+                        break
+                    else:
+                        logger.warning(f"Ошибка при чтении: {e}")
+                        break
 
                 time.sleep(0.01)
 

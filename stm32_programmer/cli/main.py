@@ -273,6 +273,27 @@ def main():
                     )
                     logger.warning("продолжаем, но запись HV может не удаться")
                     time.sleep(5)
+
+        if programmer and programmer.selected_uart:
+            try:
+                if programmer.selected_uart.is_open:
+                    logger.info("Выключение питания (финальное)...")
+                    programmer.send_command_uart(
+                        "SET EN_12V=OFF\n".encode("utf-8"), "EN_12V=OFF".encode("utf-8")
+                    )
+                    time.sleep(0.5)
+                else:
+                    logger.warning(
+                        "UART порт уже закрыт, пропускаем выключение питания"
+                    )
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.warning(f"Не удалось выключить питание (порт закрыт): {e}")
+                else:
+                    logger.warning(f"Ошибка при выключении питания: {e}")
+            except Exception as e:
+                logger.warning(f"Неожиданная ошибка при выключении питания: {e}")
     except Exception as e:
         import traceback
 
@@ -284,6 +305,27 @@ def main():
             logger.error(f"  {line}")
         logger.error("=" * 80)
         print("Результат: ОШИБКА")
+
+        if programmer and programmer.selected_uart:
+            logger.info("Выключение питания (финальное, при ошибке)...")
+            try:
+                if programmer.selected_uart.is_open:
+                    programmer.send_command_uart(
+                        "SET EN_12V=OFF\n".encode("utf-8"), "EN_12V=OFF".encode("utf-8")
+                    )
+                    time.sleep(0.5)
+                else:
+                    logger.warning(
+                        "UART порт уже закрыт, пропускаем выключение питания"
+                    )
+            except (ValueError, OSError, IOError) as e2:
+                error_msg = str(e2).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.warning(f"Не удалось выключить питание (порт закрыт): {e2}")
+                else:
+                    logger.warning(f"Не удалось выключить питание: {e2}")
+            except Exception as e2:
+                logger.warning(f"Не удалось выключить питание: {e2}")
         return
     finally:
 
