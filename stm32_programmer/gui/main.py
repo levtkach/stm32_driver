@@ -41,6 +41,41 @@ def main():
 
     def cleanup_on_exit():
         if hasattr(window, "programmer") and window.programmer:
+
+            if window.programmer.selected_uart:
+                try:
+                    if window.programmer.selected_uart.is_open:
+                        import logging
+
+                        logger = logging.getLogger(__name__)
+                        logger.info("Выключение питания при завершении приложения...")
+                        from stm32_programmer.utils.uart_settings import UARTSettings
+
+                        uart_settings = UARTSettings()
+                        line_ending_bytes = uart_settings.get_line_ending_bytes()
+                        command_off = (
+                            "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
+                        )
+                        try:
+                            window.programmer.send_command_uart(
+                                command_off, "EN_12V=OFF".strip().encode("utf-8")
+                            )
+                        except:
+
+                            try:
+                                window.programmer.selected_uart.write(command_off)
+                                window.programmer.selected_uart.flush()
+                                logger.info("Команда EN_12V=OFF отправлена напрямую")
+                            except:
+                                pass
+                        import time
+
+                        time.sleep(0.5)
+                except Exception as e:
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Ошибка при выключении питания при завершении: {e}")
             window.programmer.close_uart()
 
     app.aboutToQuit.connect(cleanup_on_exit)

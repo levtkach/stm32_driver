@@ -75,12 +75,38 @@ def main():
 
     def cleanup_uart():
         if programmer and programmer.selected_uart:
+
+            try:
+                if programmer.selected_uart.is_open:
+                    logger.info("Выключение питания при завершении программы...")
+                    from stm32_programmer.utils.uart_settings import UARTSettings
+
+                    uart_settings = UARTSettings()
+                    line_ending_bytes = uart_settings.get_line_ending_bytes()
+                    command_off = (
+                        "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
+                    )
+                    try:
+                        programmer.send_command_uart(
+                            command_off, "EN_12V=OFF".strip().encode("utf-8")
+                        )
+                    except:
+
+                        try:
+                            programmer.selected_uart.write(command_off)
+                            programmer.selected_uart.flush()
+                            logger.info("Команда EN_12V=OFF отправлена напрямую")
+                        except:
+                            pass
+                    time.sleep(0.5)
+            except Exception as e:
+                logger.warning(f"Ошибка при выключении питания при завершении: {e}")
             programmer.close_uart()
 
     atexit.register(cleanup_uart)
 
     def signal_handler(sig, frame):
-        logger.info("Получен сигнал завершения, закрываем UART...")
+        logger.info("Получен сигнал завершения, выключаем питание и закрываем UART...")
         cleanup_uart()
         sys.exit(0)
 

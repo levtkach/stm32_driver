@@ -783,9 +783,20 @@ class BaseProgrammer:
         response = None
         buffer = b""
 
-        max_wait_time = 3.0 if sys.platform == "win32" else 2.0
+        port_timeout = (
+            self.selected_uart.timeout
+            if self.selected_uart
+            else (3.0 if sys.platform == "win32" else 2.0)
+        )
+        max_wait_time = (
+            port_timeout
+            if port_timeout > 0
+            else (3.0 if sys.platform == "win32" else 4.0)
+        )
         start_time = time.time()
-        logger.debug(f"максимальное время ожидания: {max_wait_time} сек")
+        logger.debug(
+            f"максимальное время ожидания: {max_wait_time} сек (таймаут порта: {port_timeout})"
+        )
 
         try:
             read_attempts = 0

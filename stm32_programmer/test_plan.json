@@ -119,6 +119,34 @@
         "expected_response": "SWICH_PROFILE=FF",
         "wait_time": 10,
         "description": "Установка профиля переключения в FF"
+      },
+      {
+        "name": "Демонстрация LED4: установка yellow",
+        "command": "SET LED4=YELLOW",
+        "expected_response": "LED4=ON",
+        "wait_time": 1,
+        "description": "Демонстрация установки LED4 в YELLOW"
+      },
+      {
+        "name": "Демонстрация LED4: установка blink_on",
+        "command": "SET LED4=BLINK_ON",
+        "expected_response": "LED4=BLINK_ON",
+        "wait_time": 1,
+        "description": "Демонстрация установки LED4 в BLINK_ON"
+      },
+      {
+        "name": "Демонстрация LED4: установка red",
+        "command": "SET LED4=RED",
+        "expected_response": "LED4=ON",
+        "wait_time": 1,
+        "description": "Демонстрация установки LED4 в RED"
+      },
+      {
+        "name": "Демонстрация LED4: установка green",
+        "command": "SET LED4=GREEN",
+        "expected_response": "LED4=ON",
+        "wait_time": 1,
+        "description": "Демонстрация установки LED4 в GREEN"
       }
     ]
   }

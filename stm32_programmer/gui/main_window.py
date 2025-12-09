@@ -647,9 +647,38 @@ class STM32ProgrammerGUI(QWidget):
         self._save_last_device_and_port()
 
         if hasattr(self, "programmer") and self.programmer:
+
+            if self.programmer.selected_uart:
+                try:
+                    if self.programmer.selected_uart.is_open:
+                        logger.info("Выключение питания при закрытии приложения...")
+                        from stm32_programmer.utils.uart_settings import UARTSettings
+
+                        uart_settings = UARTSettings()
+                        line_ending_bytes = uart_settings.get_line_ending_bytes()
+                        command_off = (
+                            "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
+                        )
+                        try:
+                            self.programmer.send_command_uart(
+                                command_off, "EN_12V=OFF".strip().encode("utf-8")
+                            )
+                        except:
+
+                            try:
+                                self.programmer.selected_uart.write(command_off)
+                                self.programmer.selected_uart.flush()
+                                logger.info("Команда EN_12V=OFF отправлена напрямую")
+                            except:
+                                pass
+                        import time
+
+                        time.sleep(0.5)
+                except Exception as e:
+                    logger.warning(f"Ошибка при выключении питания при закрытии: {e}")
             self.programmer.close_uart()
 
-        logger.info("Состояние сохранено, UART закрыт")
+        logger.info("Состояние сохранено, питание выключено, UART закрыт")
         event.accept()
 
     def _save_last_device_and_port(self):
