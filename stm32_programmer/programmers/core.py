@@ -1269,15 +1269,28 @@ def program_device(
 
         if programmer.selected_uart and programmer.selected_uart.is_open:
             if progress_callback:
-                progress_callback("->> SET LED4=BLINK_ON")
+                progress_callback("->> SET LED4=YELLOW")
             led_yellow_command = (
-                "SET LED4=BLINK_ON".strip().encode("utf-8") + line_ending_bytes
+                "SET LED4=YELLOW".strip().encode("utf-8") + line_ending_bytes
             )
             programmer.send_command_uart(
                 led_yellow_command, "LED4=ON".strip().encode("utf-8")
             )
             if progress_callback:
                 progress_callback("<<- LED4=ON")
+            time.sleep(0.5)
+            
+            
+            if progress_callback:
+                progress_callback("->> SET LED4=BLINK_ON")
+            led_blink_command = (
+                "SET LED4=BLINK_ON".strip().encode("utf-8") + line_ending_bytes
+            )
+            programmer.send_command_uart(
+                led_blink_command, "LED4=BLINK_ON".strip().encode("utf-8")
+            )
+            if progress_callback:
+                progress_callback("<<- LED4=BLINK_ON")
             time.sleep(0.5)
 
         results = {}
