@@ -103,6 +103,18 @@ def main():
                 logger.warning(f"Ошибка при выключении питания при завершении: {e}")
             programmer.close_uart()
 
+        try:
+            logger.info("Закрытие файлов логов при завершении...")
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                try:
+                    handler.close()
+                    root_logger.removeHandler(handler)
+                except Exception as e:
+                    logger.warning(f"Ошибка при закрытии handler: {e}")
+        except Exception as e:
+            logger.warning(f"Ошибка при закрытии логов: {e}")
+
     atexit.register(cleanup_uart)
 
     def signal_handler(sig, frame):

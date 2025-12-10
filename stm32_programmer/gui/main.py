@@ -40,13 +40,26 @@ def main():
     window = STM32ProgrammerGUI()
 
     def cleanup_on_exit():
+        import logging
+
+        if hasattr(window, "serial_monitor") and window.serial_monitor:
+            try:
+                if (
+                    window.serial_monitor.serial_port
+                    and window.serial_monitor.serial_port.is_open
+                ):
+                    logger = logging.getLogger(__name__)
+                    logger.info("Закрытие Serial Monitor порта при завершении...")
+                    window.serial_monitor.disconnect_port()
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Ошибка при закрытии Serial Monitor порта: {e}")
+
         if hasattr(window, "programmer") and window.programmer:
 
             if window.programmer.selected_uart:
                 try:
                     if window.programmer.selected_uart.is_open:
-                        import logging
-
                         logger = logging.getLogger(__name__)
                         logger.info("Выключение питания при завершении приложения...")
                         from stm32_programmer.utils.uart_settings import UARTSettings
@@ -72,11 +85,23 @@ def main():
 
                         time.sleep(0.5)
                 except Exception as e:
-                    import logging
-
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Ошибка при выключении питания при завершении: {e}")
             window.programmer.close_uart()
+
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("Закрытие файлов логов при завершении...")
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                try:
+                    handler.close()
+                    root_logger.removeHandler(handler)
+                except Exception as e:
+                    logger.warning(f"Ошибка при закрытии handler: {e}")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Ошибка при закрытии логов: {e}")
 
     app.aboutToQuit.connect(cleanup_on_exit)
 

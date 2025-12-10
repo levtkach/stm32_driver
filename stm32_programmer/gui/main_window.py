@@ -664,6 +664,17 @@ class STM32ProgrammerGUI(QWidget):
         self._save_firmware_paths()
         self._save_last_device_and_port()
 
+        if hasattr(self, "serial_monitor") and self.serial_monitor:
+            try:
+                if (
+                    self.serial_monitor.serial_port
+                    and self.serial_monitor.serial_port.is_open
+                ):
+                    logger.info("Закрытие Serial Monitor порта...")
+                    self.serial_monitor.disconnect_port()
+            except Exception as e:
+                logger.warning(f"Ошибка при закрытии Serial Monitor порта: {e}")
+
         if hasattr(self, "programmer") and self.programmer:
 
             if self.programmer.selected_uart:
@@ -696,7 +707,21 @@ class STM32ProgrammerGUI(QWidget):
                     logger.warning(f"Ошибка при выключении питания при закрытии: {e}")
             self.programmer.close_uart()
 
-        logger.info("Состояние сохранено, питание выключено, UART закрыт")
+        try:
+            logger.info("Закрытие файлов логов...")
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                try:
+                    handler.close()
+                    root_logger.removeHandler(handler)
+                except Exception as e:
+                    logger.warning(f"Ошибка при закрытии handler: {e}")
+        except Exception as e:
+            logger.warning(f"Ошибка при закрытии логов: {e}")
+
+        logger.info(
+            "Состояние сохранено, питание выключено, UART закрыт, ресурсы освобождены"
+        )
         event.accept()
 
     def _save_last_device_and_port(self):
