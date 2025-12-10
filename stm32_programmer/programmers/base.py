@@ -180,17 +180,15 @@ def reset_uart_system_level(port_name):
                 time.sleep(2.0)
 
         elif platform.system() == "Windows":
-            
+
             try:
                 logger.info("Симуляция отключения USB устройства на Windows...")
-                
-            
-            
+
                 com_port_num = port_name.replace("COM", "").strip()
-                
+
                 if com_port_num.isdigit():
-                   
-                    ps_command = f'''
+
+                    ps_command = f"""
                     try {{
                         # Находим COM порт
                         $port = Get-WmiObject Win32_SerialPort | Where-Object {{ $_.DeviceID -eq "{port_name}" }}
@@ -221,25 +219,32 @@ def reset_uart_system_level(port_name):
                     }} catch {{
                         Write-Output "Ошибка: $_"
                     }}
-                    '''
-                    
+                    """
+
                     try:
-                        logger.info("Выполнение PowerShell команды для перезагрузки USB устройства...")
+                        logger.info(
+                            "Выполнение PowerShell команды для перезагрузки USB устройства..."
+                        )
                         result = subprocess.run(
                             ["powershell", "-Command", ps_command],
                             capture_output=True,
                             text=True,
-                            timeout=20
+                            timeout=20,
                         )
-                        
+
                         if result.returncode == 0:
                             output = result.stdout.strip()
                             logger.info(f"Результат PowerShell: {output}")
-                            if "перезагружено" in output or "перезагружено" in output.lower():
+                            if (
+                                "перезагружено" in output
+                                or "перезагружено" in output.lower()
+                            ):
                                 logger.info("USB устройство успешно перезагружено")
                             time.sleep(2.0)
                         else:
-                            logger.warning(f"PowerShell вернул код ошибки {result.returncode}: {result.stderr}")
+                            logger.warning(
+                                f"PowerShell вернул код ошибки {result.returncode}: {result.stderr}"
+                            )
                             time.sleep(1.5)
                     except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
                         logger.warning(f"Ошибка при перезагрузке USB устройства: {e}")
@@ -247,7 +252,7 @@ def reset_uart_system_level(port_name):
                 else:
                     logger.warning(f"Неверный формат COM порта: {port_name}")
                     time.sleep(1.5)
-                    
+
             except Exception as e:
                 logger.warning(f"Ошибка при симуляции отключения USB на Windows: {e}")
                 time.sleep(1.5)
@@ -507,29 +512,34 @@ class BaseProgrammer:
                 logger.info(f"Адрес записи: {hex(address)}")
                 logger.info("=" * 80)
                 programmer = STLinkProgrammer(self.selected)
-                success = programmer.write_bytes(data, address)
+                try:
+                    success = programmer.write_bytes(data, address)
 
-                if not success and hasattr(programmer, "reconnect"):
-                    logger.warning("запись не удалась, попытка переподключения...")
-                    if programmer.reconnect():
-                        logger.info(
-                            "переподключение успешно, повторная попытка записи..."
+                    if not success and hasattr(programmer, "reconnect"):
+                        logger.warning("запись не удалась, попытка переподключения...")
+                        if programmer.reconnect():
+                            logger.info(
+                                "переподключение успешно, повторная попытка записи..."
+                            )
+                            time.sleep(1)
+                            success = programmer.write_bytes(data, address)
+
+                    if success:
+                        logger.info("запись выполнена через прямой USB доступ")
+                    else:
+                        last_error = (
+                            "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)\n"
+                            "Возможные причины:\n"
+                            "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
+                            "  - Устройство не подключено или не включено\n"
+                            "  - Проблемы с драйверами ST-Link\n"
+                            "Решение: закройте STM32CubeProgrammer и попробуйте снова"
                         )
-                        time.sleep(1)
-                        success = programmer.write_bytes(data, address)
+                        logger.warning(f"запись через прямой USB доступ не удалась")
+                finally:
 
-                if success:
-                    logger.info("запись выполнена через прямой USB доступ")
-                else:
-                    last_error = (
-                        "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)\n"
-                        "Возможные причины:\n"
-                        "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
-                        "  - Устройство не подключено или не включено\n"
-                        "  - Проблемы с драйверами ST-Link\n"
-                        "Решение: закройте STM32CubeProgrammer и попробуйте снова"
-                    )
-                    logger.warning(f"запись через прямой USB доступ не удалась")
+                    if hasattr(programmer, "disconnect"):
+                        programmer.disconnect()
             except Exception as e:
                 attempted_methods.append(f"STLinkProgrammer (ошибка: {e})")
                 last_error = f"STLinkProgrammer: {e}"
@@ -625,16 +635,23 @@ class BaseProgrammer:
                         from .stlink import STLinkProgrammer
 
                         programmer = STLinkProgrammer(self.selected)
-                        logger.info(f"чтение {read_size} байт с адреса {hex(address)}")
-                        read_data = programmer.read_bytes(read_size, address)
-                        if read_data:
+                        try:
                             logger.info(
-                                f"прочитано {len(read_data)} байт через прямой USB доступ"
+                                f"чтение {read_size} байт с адреса {hex(address)}"
                             )
-                        else:
-                            logger.warning(
-                                "не удалось прочитать данные через прямой USB доступ"
-                            )
+                            read_data = programmer.read_bytes(read_size, address)
+                            if read_data:
+                                logger.info(
+                                    f"прочитано {len(read_data)} байт через прямой USB доступ"
+                                )
+                            else:
+                                logger.warning(
+                                    "не удалось прочитать данные через прямой USB доступ"
+                                )
+                        finally:
+
+                            if hasattr(programmer, "disconnect"):
+                                programmer.disconnect()
                     except Exception as e:
                         read_data = b""
                         logger.warning(
@@ -821,7 +838,12 @@ class BaseProgrammer:
                     from .stlink import STLinkProgrammer
 
                     programmer = STLinkProgrammer(self.selected)
-                    data = programmer.read_bytes(size, address)
+                    try:
+                        data = programmer.read_bytes(size, address)
+                    finally:
+
+                        if hasattr(programmer, "disconnect"):
+                            programmer.disconnect()
                 except:
                     data = b""
 

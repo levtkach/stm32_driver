@@ -13,9 +13,9 @@ class STLinkProgrammer:
         self.usb_device = None
         self.interface = None
         self.version = None
-        self._connect()
 
-    def reconnect(self):
+    def disconnect(self):
+
         if self.usb_device and self.interface:
             try:
                 usb.util.release_interface(
@@ -28,8 +28,10 @@ class STLinkProgrammer:
         self.interface = None
         self.version = None
 
-        time.sleep(0.5)
+    def reconnect(self):
 
+        self.disconnect()
+        time.sleep(0.5)
         return self._connect()
 
     def _connect(self):
@@ -252,9 +254,11 @@ class STLinkProgrammer:
             return False
 
     def write_bytes(self, data, address):
+
         if not self.usb_device or not self.interface:
-            logger.error("Ошибка: USB устройство или интерфейс не инициализированы")
-            return False
+            if not self._connect():
+                logger.error("Ошибка: не удалось подключиться к USB устройству")
+                return False
 
         try:
             logger.info("Проверка подключения к целевому устройству...")
@@ -342,6 +346,7 @@ class STLinkProgrammer:
             else:
                 logger.error("Запись завершена с ошибками")
 
+            self.disconnect()
             return success
 
         except (ValueError, OSError, IOError) as e:
@@ -365,6 +370,8 @@ class STLinkProgrammer:
                 self._exit_debug_mode()
             except:
                 pass
+
+            self.disconnect()
             return False
         except Exception as e:
             logger.exception(f"Исключение при записи: {e}")
@@ -372,14 +379,18 @@ class STLinkProgrammer:
                 self._exit_debug_mode()
             except:
                 pass
+
+            self.disconnect()
             return False
 
     def read_bytes(self, size, address):
+
         if not self.usb_device or not self.interface:
-            logger.warning(
-                "USB устройство или интерфейс не инициализированы, чтение невозможно"
-            )
-            return b""
+            if not self._connect():
+                logger.warning(
+                    "USB устройство или интерфейс не инициализированы, чтение невозможно"
+                )
+                return b""
 
         try:
             logger.info(f"проверка подключения к целевому устройству для чтения...")
@@ -408,10 +419,14 @@ class STLinkProgrammer:
             if data:
                 logger.info(f"прочитано {len(data)} байт через прямой USB доступ")
                 self._exit_debug_mode()
+
+                self.disconnect()
                 return data
             else:
                 logger.warning("не удалось прочитать данные через прямой USB доступ")
                 self._exit_debug_mode()
+
+                self.disconnect()
                 return b""
 
         except Exception as e:
@@ -420,6 +435,8 @@ class STLinkProgrammer:
                 self._exit_debug_mode()
             except:
                 pass
+
+            self.disconnect()
             return b""
 
     def clear_memory(self, address, size):
@@ -452,8 +469,10 @@ class STLinkProgrammer:
             return b""
 
     def erase_flash(self):
-        if not self.usb_device:
-            return False
+
+        if not self.usb_device or not self.interface:
+            if not self._connect():
+                return False
 
         try:
 
@@ -484,17 +503,23 @@ class STLinkProgrammer:
 
             self._exit_debug_mode()
 
+            self.disconnect()
+
             if result:
                 return True
             else:
                 return False
 
         except Exception as e:
+
+            self.disconnect()
             return False
 
     def reset_target(self):
-        if not self.usb_device:
-            return False
+
+        if not self.usb_device or not self.interface:
+            if not self._connect():
+                return False
 
         try:
 
@@ -525,19 +550,18 @@ class STLinkProgrammer:
 
             self._exit_debug_mode()
 
+            self.disconnect()
+
             if result:
                 return True
             else:
                 return False
 
         except Exception as e:
+
+            self.disconnect()
             return False
 
     def __del__(self):
-        if self.usb_device and self.interface:
-            try:
-                usb.util.release_interface(
-                    self.usb_device, self.interface.bInterfaceNumber
-                )
-            except:
-                pass
+
+        self.disconnect()

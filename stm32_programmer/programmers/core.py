@@ -2185,15 +2185,18 @@ def program_device(
             if status_callback:
                 status_callback(error_msg)
 
-        
         if test_success is None:
-        
+
             final_success = success
-            logger.info(f"Тестирование не выполнялось, final_success = success = {success}")
+            logger.info(
+                f"Тестирование не выполнялось, final_success = success = {success}"
+            )
         else:
-        
+
             final_success = success and test_success
-            logger.info(f"Тестирование выполнялось: success={success}, test_success={test_success}, final_success={final_success}")
+            logger.info(
+                f"Тестирование выполнялось: success={success}, test_success={test_success}, final_success={final_success}"
+            )
 
         logger.info(
             f"ФИНАЛЬНЫЙ РЕЗУЛЬТАТ ДЛЯ LED: success={success}, test_success={test_success}, final_success={final_success}"
@@ -2207,7 +2210,9 @@ def program_device(
                 line_ending_bytes = uart_settings.get_line_ending_bytes()
 
                 if final_success:
-                    logger.info("ВКЛЮЧЕНИЕ ЗЕЛЕНОГО СВЕТОДИОДА (УСПЕХ) - final_success=True")
+                    logger.info(
+                        "ВКЛЮЧЕНИЕ ЗЕЛЕНОГО СВЕТОДИОДА (УСПЕХ) - final_success=True"
+                    )
                     if progress_callback:
                         progress_callback("->> SET LED4=GREEN")
                     led_command = (
@@ -2218,9 +2223,13 @@ def program_device(
                     )
                     if progress_callback:
                         progress_callback("<<- LED4=ON")
-                    logger.info(f"Команда SET LED4=GREEN отправлена, результат: {led_success}")
+                    logger.info(
+                        f"Команда SET LED4=GREEN отправлена, результат: {led_success}"
+                    )
                 else:
-                    logger.info("ВКЛЮЧЕНИЕ КРАСНОГО СВЕТОДИОДА (ОШИБКА) - final_success=False")
+                    logger.info(
+                        "ВКЛЮЧЕНИЕ КРАСНОГО СВЕТОДИОДА (ОШИБКА) - final_success=False"
+                    )
                     if progress_callback:
                         progress_callback("->> SET LED4=RED")
                     led_command = (
@@ -2231,10 +2240,15 @@ def program_device(
                     )
                     if progress_callback:
                         progress_callback("<<- LED4=ON")
-                    logger.info(f"Команда SET LED4=RED отправлена, результат: {led_success}")
+                    logger.info(
+                        f"Команда SET LED4=RED отправлена, результат: {led_success}"
+                    )
                 time.sleep(0.5)
             except Exception as led_error:
-                logger.error(f"КРИТИЧЕСКАЯ ОШИБКА при отправке команды LED: {led_error}", exc_info=True)
+                logger.error(
+                    f"КРИТИЧЕСКАЯ ОШИБКА при отправке команды LED: {led_error}",
+                    exc_info=True,
+                )
 
         if success:
             if test_success is None or test_success:
