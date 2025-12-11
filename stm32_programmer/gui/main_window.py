@@ -23,11 +23,20 @@ import serial.tools.list_ports
 import threading
 from pathlib import Path
 import html
-from stm32_programmer.programmers.core import setup_logging, program_device
+from stm32_programmer.programmers.core import (
+    setup_logging,
+    program_device,
+    connect_to_uart_port,
+)
 from stm32_programmer.programmers.base import BaseProgrammer
+import serial
+import time
 from .styles import get_stylesheet
 from .serial_monitor import SerialMonitorWidget
+from .device_memory import DeviceMemoryWidget
 from .button_animation import DeleteAnimation
+from .icon_manager import IconManager
+from stm32_programmer.utils.icon_loader import get_icon_emoji_fallback
 import logging
 
 logger = logging.getLogger(__name__)
@@ -185,6 +194,7 @@ class STM32ProgrammerGUI(QWidget):
         self.current_device_id = None
         self.current_port = None
         self.current_theme = self.settings.value("theme", "dark")
+        self.icon_manager = IconManager(self.current_theme)
         self.init_sounds()
         logger, log_file = setup_logging()
         self.log_file = log_file
@@ -322,7 +332,8 @@ class STM32ProgrammerGUI(QWidget):
         title_label.setProperty("title", True)
         header_layout.addWidget(title_label, 1)
 
-        self.btn_theme = QPushButton("☀" if self.current_theme == "dark" else "☾")
+        self.btn_theme = QPushButton()
+        self.icon_manager.update_theme_icon(self.btn_theme, self.current_theme)
         self.btn_theme.setProperty("themeToggle", True)
         self.btn_theme.setMinimumWidth(28)
         self.btn_theme.setToolTip("Переключить тему (светлая/темная)")
@@ -339,8 +350,10 @@ class STM32ProgrammerGUI(QWidget):
         programming_layout.setContentsMargins(0, 0, 0, 0)
         self.programming_widget.setLayout(programming_layout)
         self.serial_monitor = SerialMonitorWidget(self)
+        self.device_memory = DeviceMemoryWidget(self)
         self.tabs.addTab(self.programming_widget, "Программатор")
         self.tabs.addTab(self.serial_monitor, "Serial Monitor")
+        self.tabs.addTab(self.device_memory, "Device Memory")
         layout.addWidget(self.tabs)
         layout.addSpacing(20)
         programming_content = self.create_programming_content()
@@ -395,7 +408,8 @@ class STM32ProgrammerGUI(QWidget):
         self.combobox_devices.currentIndexChanged.connect(self._on_device_changed)
         device_container_layout.addWidget(self.combobox_devices, 1)
 
-        self.btn_refresh_devices = QPushButton("↻")
+        self.btn_refresh_devices = QPushButton()
+        self.icon_manager.update_refresh_icon(self.btn_refresh_devices)
         self.btn_refresh_devices.setProperty("refreshButton", True)
         self.btn_refresh_devices.setFixedSize(28, 28)
         self.btn_refresh_devices.setCursor(Qt.PointingHandCursor)
@@ -425,7 +439,8 @@ class STM32ProgrammerGUI(QWidget):
             lambda text: self.combobox_ports.setToolTip(text)
         )
         port_container_layout.addWidget(self.combobox_ports, 1)
-        self.btn_refresh_ports = QPushButton("↻")
+        self.btn_refresh_ports = QPushButton()
+        self.icon_manager.update_refresh_icon(self.btn_refresh_ports)
         self.btn_refresh_ports.setProperty("refreshButton", True)
         self.btn_refresh_ports.setFixedSize(28, 28)
         self.btn_refresh_ports.setCursor(Qt.PointingHandCursor)
@@ -467,7 +482,8 @@ class STM32ProgrammerGUI(QWidget):
 
         log_control_layout.addStretch()
 
-        self.btn_program = QPushButton("▶")
+        self.btn_program = QPushButton()
+        self.icon_manager.update_play_icon(self.btn_program, self.is_programming)
         self.btn_program.setProperty("programButton", True)
         self.btn_program.setEnabled(False)
         self.btn_program.setFixedSize(28, 28)
@@ -476,7 +492,8 @@ class STM32ProgrammerGUI(QWidget):
         self.btn_program.clicked.connect(self.toggle_programming)
         log_control_layout.addWidget(self.btn_program)
 
-        self.btn_clear = QPushButton("✕")
+        self.btn_clear = QPushButton()
+        self.icon_manager.update_cross_icon(self.btn_clear)
         self.btn_clear.setProperty("iconButton", True)
         self.btn_clear.setFixedSize(28, 28)
         self.btn_clear.setToolTip("Очистить логи")
@@ -484,7 +501,8 @@ class STM32ProgrammerGUI(QWidget):
         self.btn_clear.clicked.connect(self.clear_files)
         log_control_layout.addWidget(self.btn_clear)
 
-        self.btn_open_log = QPushButton("📄")
+        self.btn_open_log = QPushButton()
+        self.icon_manager.update_document_icon(self.btn_open_log)
         self.btn_open_log.setProperty("iconButton", True)
         self.btn_open_log.setFixedSize(28, 28)
         self.btn_open_log.setToolTip("Открыть файл лога")
@@ -524,9 +542,6 @@ class STM32ProgrammerGUI(QWidget):
 
         self.current_process_label = QLabel()
         self.current_process_label.setAlignment(Qt.AlignCenter)
-        self.current_process_label.setStyleSheet(
-            "color: #50fa7b; font-weight: 500; padding: 4px;"
-        )
 
         progress_container = QVBoxLayout()
         progress_container.addWidget(self.current_process_label)
@@ -1034,7 +1049,8 @@ class STM32ProgrammerGUI(QWidget):
                     port_text = f"{port_text} (связан с выбранным ST-Link)"
                     linked_port_index = idx
                 elif saved_port and port.device == saved_port:
-                    port_text = f"💾 {port_text} (сохраненное сопоставление)"
+                    save_emoji = get_icon_emoji_fallback("save")
+                    port_text = f"{save_emoji} {port_text} (сохраненное сопоставление)"
                     saved_port_index = idx
 
                 self.combobox_ports.addItem(port_text, port.device)
@@ -1104,19 +1120,20 @@ class STM32ProgrammerGUI(QWidget):
     def validate_firmware_name(self, file_path, mode):
         file_name = Path(file_path).name.lower()
 
+        warning_emoji = get_icon_emoji_fallback("warning")
         if mode == "LV":
             expected_keyword = "master"
             if expected_keyword not in file_name:
                 return (
                     False,
-                    f"⚠️ Предупреждение: Для LV режима ожидается прошивка с 'master' в названии, но выбран файл '{Path(file_path).name}'",
+                    f"{warning_emoji} Предупреждение: Для LV режима ожидается прошивка с 'master' в названии, но выбран файл '{Path(file_path).name}'",
                 )
         elif mode == "HV":
             expected_keyword = "slave"
             if expected_keyword not in file_name:
                 return (
                     False,
-                    f"⚠️ Предупреждение: Для HV режима ожидается прошивка с 'slave' в названии, но выбран файл '{Path(file_path).name}'",
+                    f"{warning_emoji} Предупреждение: Для HV режима ожидается прошивка с 'slave' в названии, но выбран файл '{Path(file_path).name}'",
                 )
 
         return True, None
@@ -1210,11 +1227,10 @@ class STM32ProgrammerGUI(QWidget):
     def update_buttons_state(self):
         has_files = bool(self.lv_file_path or self.hv_file_path)
         self.btn_program.setEnabled(has_files or self.is_programming)
+        self.icon_manager.update_play_icon(self.btn_program, self.is_programming)
         if self.is_programming:
-            self.btn_program.setText("■")
             self.btn_program.setToolTip("Остановить программирование")
         else:
-            self.btn_program.setText("▶")
             self.btn_program.setToolTip("Прошить микроконтроллер")
         is_enabled = not self.is_programming
         self.combobox_devices.setEnabled(is_enabled)
@@ -1237,16 +1253,19 @@ class STM32ProgrammerGUI(QWidget):
         if not message.startswith("["):
             message = f"{timestamp} {message}"
         message = html.escape(message)
+
+        is_light_theme = self.current_theme == "light"
+
         if msg_type == "error":
-            color = "#ff5555"
+            color = "#e53e3e" if is_light_theme else "#ff5555"
         elif msg_type == "warning":
-            color = "#ffaa00"
+            color = "#dd6b20" if is_light_theme else "#ffaa00"
         elif msg_type == "command":
-            color = "#50fa7b"
+            color = "#38a169" if is_light_theme else "#50fa7b"
         elif msg_type == "response":
-            color = "#8be9fd"
+            color = "#3182ce" if is_light_theme else "#8be9fd"
         else:
-            color = "#e0e0e0"
+            color = "#1a202c" if is_light_theme else "#e0e0e0"
 
         self.console.append(f'<span style="color:{color}">{message}</span>')
         self.console.moveCursor(self.console.textCursor().End)
@@ -1262,8 +1281,9 @@ class STM32ProgrammerGUI(QWidget):
             return
         self.is_stopping = True
         self.current_process_label.setText("Остановка...")
+        color = self.get_process_label_color("stopping")
         self.current_process_label.setStyleSheet(
-            "color: #ffb86c; font-weight: 500; padding: 4px;"
+            f"color: {color}; font-weight: 500; padding: 4px;"
         )
         self.current_process_label.show()
         self.current_process_label.update()
@@ -1371,8 +1391,9 @@ class STM32ProgrammerGUI(QWidget):
         self.testing_progress_bar.hide()
         self.testing_progress_bar.setValue(0)
         self.current_process_label.setText("Программирование...")
+        color = self.get_process_label_color("programming")
         self.current_process_label.setStyleSheet(
-            "color: #50fa7b; font-weight: 500; padding: 4px;"
+            f"color: {color}; font-weight: 500; padding: 4px;"
         )
         self.current_process_label.show()
         self.programming_thread = ProgrammingThread(
@@ -1398,8 +1419,9 @@ class STM32ProgrammerGUI(QWidget):
     def on_progress_updated(self, message):
         if self.is_stopping:
             self.current_process_label.setText("Остановка...")
+            color = self.get_process_label_color("stopping")
             self.current_process_label.setStyleSheet(
-                "color: #ffb86c; font-weight: 500; padding: 4px;"
+                f"color: {color}; font-weight: 500; padding: 4px;"
             )
             return
         if message.startswith("->>"):
@@ -1420,8 +1442,9 @@ class STM32ProgrammerGUI(QWidget):
 
         if "ТЕСТИРОВАНИЕ" in message_upper or message == "Тестирование...":
             self.current_process_label.setText("Тестирование...")
+            color = self.get_process_label_color("testing")
             self.current_process_label.setStyleSheet(
-                "color: #ffb86c; font-weight: 500; padding: 4px;"
+                f"color: {color}; font-weight: 500; padding: 4px;"
             )
             self.current_process_label.show()
 
@@ -1503,6 +1526,16 @@ class STM32ProgrammerGUI(QWidget):
                     f"Сохранено сопоставление: устройство {self.current_device_id} -> порт {self.current_port}",
                     msg_type="info",
                 )
+                if hasattr(self, "current_device_id") and self.current_device_id:
+                    device_index = self.combobox_devices.currentIndex()
+                    if device_index >= 0:
+                        device_data = self.combobox_devices.currentData()
+                        if device_data and 1 <= device_data <= len(self.devices):
+                            selected_device = self.devices[device_data - 1]
+                            if hasattr(self, "device_memory"):
+                                self.device_memory.update_mode_buttons_state(
+                                    selected_device
+                                )
         else:
             self.log(f"Ошибка: {message}", msg_type="error")
             if (
@@ -1533,7 +1566,7 @@ class STM32ProgrammerGUI(QWidget):
                         "КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n\n"
                         "Не удалось записать прошивку из-за закрытого файла/устройства.\n\n"
                         "Возможные причины:\n"
-                        "  • USB устройство было закрыто другим процессом (STM32CubeProgrammer) 🤔\n"
+                        f"  • USB устройство было закрыто другим процессом (STM32CubeProgrammer) {get_icon_emoji_fallback('thinking')}\n"
                         "  • Устройство было отключено во время записи\n"
                         "  • USB интерфейс был закрыт\n\n"
                         "Решение:\n"
@@ -1549,7 +1582,7 @@ class STM32ProgrammerGUI(QWidget):
                         f"{message}\n\n"
                         "Проверьте:\n"
                         "  • Устройство подключено и включено\n"
-                        "  • STM32CubeProgrammer закрыт 🤔\n"
+                        f"  • STM32CubeProgrammer закрыт {get_icon_emoji_fallback('thinking')}\n"
                         "  • Драйверы ST-Link установлены правильно"
                     )
                 else:
@@ -1567,7 +1600,6 @@ class STM32ProgrammerGUI(QWidget):
                 if result == QMessageBox.Ok:
                     self._turn_off_led()
 
-        # Системная перезагрузка UART порта после завершения прошивки
         if self.current_port:
             try:
                 from stm32_programmer.programmers.base import reset_uart_system_level
@@ -1582,7 +1614,6 @@ class STM32ProgrammerGUI(QWidget):
         self.current_port = None
 
     def _turn_off_led(self):
-        """Выключает светодиод LED4 после ошибки"""
         try:
             if (
                 self.programmer
@@ -1626,17 +1657,98 @@ class STM32ProgrammerGUI(QWidget):
                 "Предупреждение", "Лог файл не найден", QMessageBox.Warning
             )
 
+    def get_process_label_color(self, process_type="programming"):
+        is_light = self.current_theme == "light"
+
+        if process_type == "programming":
+            return "#38a169" if is_light else "#50fa7b"
+        elif process_type == "testing" or process_type == "stopping":
+            return "#dd6b20" if is_light else "#ffb86c"
+        else:
+            return "#1a202c" if is_light else "#e0e0e0"
+
+    def update_console_colors(self):
+        if not hasattr(self, "console") or self.console is None:
+            return
+
+        html_content = self.console.toHtml()
+
+        is_light = self.current_theme == "light"
+
+        color_mapping = {}
+        if is_light:
+            color_mapping = {
+                "#ff5555": "#e53e3e",
+                "#ffaa00": "#dd6b20",
+                "#50fa7b": "#38a169",
+                "#8be9fd": "#3182ce",
+                "#e0e0e0": "#1a202c",
+            }
+        else:
+            color_mapping = {
+                "#e53e3e": "#ff5555",
+                "#dd6b20": "#ffaa00",
+                "#38a169": "#50fa7b",
+                "#3182ce": "#8be9fd",
+                "#1a202c": "#e0e0e0",
+            }
+
+        for old_color, new_color in color_mapping.items():
+            html_content = html_content.replace(
+                f"color:{old_color}", f"color:{new_color}"
+            )
+            html_content = html_content.replace(
+                f"color: {old_color}", f"color: {new_color}"
+            )
+
+        cursor = self.console.textCursor()
+        scroll_position = self.console.verticalScrollBar().value()
+
+        self.console.setHtml(html_content)
+
+        self.console.verticalScrollBar().setValue(scroll_position)
+        cursor.movePosition(cursor.End)
+        self.console.setTextCursor(cursor)
+
     def toggle_theme(self):
         if self.current_theme == "dark":
             self.current_theme = "light"
-            self.btn_theme.setText("☾")
         else:
             self.current_theme = "dark"
-            self.btn_theme.setText("☀")
 
+        self.icon_manager.set_theme(self.current_theme)
         self.apply_theme(self.current_theme)
         self.settings.setValue("theme", self.current_theme)
         self.settings.sync()
+
+        self.update_console_colors()
+
+        if (
+            hasattr(self, "current_process_label")
+            and self.current_process_label.isVisible()
+        ):
+            text = self.current_process_label.text()
+            if "Программирование" in text:
+                process_type = "programming"
+            elif "Тестирование" in text:
+                process_type = "testing"
+            elif "Остановка" in text:
+                process_type = "stopping"
+            else:
+                process_type = "programming"
+            color = self.get_process_label_color(process_type)
+            self.current_process_label.setStyleSheet(
+                f"color: {color}; font-weight: 500; padding: 4px;"
+            )
+
+        if hasattr(self, "btn_program"):
+            self.icon_manager.update_play_icon(self.btn_program, self.is_programming)
+
+        if hasattr(self, "serial_monitor") and self.serial_monitor:
+            self.serial_monitor.update_theme(self.current_theme)
+
+        if hasattr(self, "device_memory") and self.device_memory:
+            self.device_memory.update_theme(self.current_theme)
 
     def apply_theme(self, theme):
         stylesheet = get_stylesheet(theme)
@@ -1644,7 +1756,6 @@ class STM32ProgrammerGUI(QWidget):
         if hasattr(self, "serial_monitor"):
             self.serial_monitor.setStyleSheet(stylesheet)
 
-        # Применяем стили к прогресс-барам в зависимости от темы
         if theme == "dark":
             border_color = "#44475a"
             text_color = "#f8f8f2"
@@ -1691,3 +1802,17 @@ class STM32ProgrammerGUI(QWidget):
                 }}
             """
             )
+
+        self.icon_manager.set_theme(theme)
+        if hasattr(self, "btn_refresh_devices"):
+            self.icon_manager.update_refresh_icon(self.btn_refresh_devices)
+        if hasattr(self, "btn_refresh_ports"):
+            self.icon_manager.update_refresh_icon(self.btn_refresh_ports)
+        if hasattr(self, "btn_program"):
+            self.icon_manager.update_play_icon(self.btn_program, self.is_programming)
+        if hasattr(self, "btn_clear"):
+            self.icon_manager.update_cross_icon(self.btn_clear)
+        if hasattr(self, "btn_open_log"):
+            self.icon_manager.update_document_icon(self.btn_open_log)
+        if hasattr(self, "btn_theme"):
+            self.icon_manager.update_theme_icon(self.btn_theme, theme)

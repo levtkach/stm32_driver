@@ -59,9 +59,9 @@ def get_light_stylesheet():
     
     /* Кнопка программирования */
     QPushButton[programButton="true"] {
-        background-color: #4a5568;
-        color: #ffffff;
-        border: 1px solid #4a5568;
+        background-color: #edf2f7;
+        color: #1a202c;
+        border: 1px solid #cbd5e0;
         border-radius: 4px;
         font-size: 14pt;
         font-weight: bold;
@@ -72,13 +72,13 @@ def get_light_stylesheet():
     }
     
     QPushButton[programButton="true"]:hover {
-        background-color: #2d3748;
-        border: 2px solid #1a202c;
+        background-color: #e2e8f0;
+        border: 2px solid #718096;
     }
     
     QPushButton[programButton="true"]:pressed {
-        background-color: #1a202c;
-        border: 2px solid #000000;
+        background-color: #cbd5e0;
+        border: 2px solid #4a5568;
     }
     
     QPushButton[programButton="true"]:disabled {
@@ -107,6 +107,21 @@ def get_light_stylesheet():
     QPushButton[iconButton="true"]:pressed {
         background-color: #e2e8f0;
         border: 2px solid #4a5568;
+    }
+    
+    /* Активная кнопка режима LV/HV */
+    QPushButton[iconButton="true"][activeMode="LV"],
+    QPushButton[iconButton="true"][activeMode="HV"] {
+        background-color: #48bb78;
+        color: #ffffff;
+        border: 2px solid #38a169;
+        font-weight: bold;
+    }
+    
+    QPushButton[iconButton="true"][activeMode="LV"]:hover,
+    QPushButton[iconButton="true"][activeMode="HV"]:hover {
+        background-color: #38a169;
+        border: 2px solid #2f855a;
     }
     
     /* Обводка валидации для кнопок загрузки прошивки */
@@ -241,9 +256,9 @@ def get_light_stylesheet():
     
     /* Текстовое поле консоли */
     QTextEdit {
-        background-color: #1a202c;
-        color: #e2e8f0;
-        border: 1px solid #4a5568;
+        background-color: #f8f9fa;
+        color: #1a202c;
+        border: 1px solid #cbd5e0;
         border-radius: 4px;
         padding: 12px;
         font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Menlo', 'Courier New', monospace;
@@ -253,7 +268,7 @@ def get_light_stylesheet():
     }
     
     QTextEdit:focus {
-        border: 1px solid #2d3748;
+        border: 1px solid #718096;
     }
     
     /* Прогресс-бар */
@@ -284,7 +299,7 @@ def get_light_stylesheet():
     /* Информационные метки */
     QLabel[info="true"] {
         color: #4a5568;
-        font-size: 10pt;
+        font-size: 11pt;
         background-color: transparent;
     }
     
@@ -567,6 +582,21 @@ def get_dark_stylesheet():
     QPushButton[iconButton="true"]:pressed {
         background-color: #44475a;
         border: 2px solid #bd93f9;
+    }
+    
+    /* Активная кнопка режима LV/HV */
+    QPushButton[iconButton="true"][activeMode="LV"],
+    QPushButton[iconButton="true"][activeMode="HV"] {
+        background-color: #50fa7b;
+        color: #282a36;
+        border: 2px solid #3ddc84;
+        font-weight: bold;
+    }
+    
+    QPushButton[iconButton="true"][activeMode="LV"]:hover,
+    QPushButton[iconButton="true"][activeMode="HV"]:hover {
+        background-color: #3ddc84;
+        border: 2px solid #2ec86a;
     }
     
     /* Обводка валидации для кнопок загрузки прошивки */

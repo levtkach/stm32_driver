@@ -7,6 +7,8 @@ import time
 import os
 import sys
 import logging
+import importlib.util
+from stm32_programmer.utils.icon_loader import get_icon_emoji_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +134,6 @@ DEFAULT_FLASH_ADDRESS = 0x08000000
 
 
 def reset_uart_system_level(port_name):
-    """Системная перезагрузка UART порта"""
     logger = logging.getLogger(__name__)
     logger.info(f"Системная перезагрузка UART порта {port_name}...")
 
@@ -190,24 +191,19 @@ def reset_uart_system_level(port_name):
 
                     ps_command = f"""
                     try {{
-                        # Находим COM порт
                         $port = Get-WmiObject Win32_SerialPort | Where-Object {{ $_.DeviceID -eq "{port_name}" }}
                         if ($port) {{
-                            # Находим связанное USB устройство
                             $pnpDevice = Get-PnpDevice | Where-Object {{ $_.InstanceId -eq $port.PNPDeviceID }}
                             if (-not $pnpDevice) {{
-                                # Пробуем найти по VID/PID
                                 $pnpDevice = Get-PnpDevice | Where-Object {{ $_.FriendlyName -like "*{port_name}*" -or $_.InstanceId -like "*USB*" }}
                             }}
                             if ($pnpDevice) {{
                                 $instanceId = $pnpDevice.InstanceId
                                 Write-Output "Найдено устройство: $instanceId"
                                 
-                                # Отключаем устройство
                                 Disable-PnpDevice -InstanceId $instanceId -Confirm:$false -ErrorAction SilentlyContinue
                                 Start-Sleep -Seconds 2
                                 
-                                # Включаем устройство обратно
                                 Enable-PnpDevice -InstanceId $instanceId -Confirm:$false -ErrorAction SilentlyContinue
                                 Write-Output "Устройство перезагружено"
                             }} else {{
@@ -294,7 +290,6 @@ class BaseProgrammer:
         self.selected_uart = None
 
     def close_uart(self):
-        """Корректно закрывает UART подключение и полностью очищает буферы"""
         if self.selected_uart:
             try:
                 port_name = (
@@ -304,25 +299,19 @@ class BaseProgrammer:
                 )
                 if self.selected_uart.is_open:
                     logger.info(f"закрытие UART порта {port_name}")
-                    try:
+                    if self.selected_uart.in_waiting > 0:
+                        logger.info(
+                            f"очистка входного буфера: {self.selected_uart.in_waiting} байт"
+                        )
+                        self.selected_uart.read(self.selected_uart.in_waiting)
+                    self.selected_uart.reset_input_buffer()
+                    self.selected_uart.reset_output_buffer()
 
-                        if self.selected_uart.in_waiting > 0:
-                            logger.info(
-                                f"очистка входного буфера: {self.selected_uart.in_waiting} байт"
-                            )
-                            self.selected_uart.read(self.selected_uart.in_waiting)
-                        self.selected_uart.reset_input_buffer()
-                        self.selected_uart.reset_output_buffer()
-
-                        if self.selected_uart.in_waiting > 0:
-                            remaining = self.selected_uart.read(
-                                self.selected_uart.in_waiting
-                            )
-                            logger.info(
-                                f"дополнительная очистка: {len(remaining)} байт"
-                            )
-                    except Exception as e:
-                        logger.warning(f"ошибка при очистке буферов: {e}")
+                    if self.selected_uart.in_waiting > 0:
+                        remaining = self.selected_uart.read(
+                            self.selected_uart.in_waiting
+                        )
+                        logger.info(f"дополнительная очистка: {len(remaining)} байт")
 
                     self.selected_uart.close()
 
@@ -331,7 +320,6 @@ class BaseProgrammer:
                     time.sleep(0.1)
                     logger.info("UART порт закрыт и буферы очищены")
 
-                    # Системная перезагрузка порта после закрытия
                     reset_uart_system_level(port_name)
 
                 self.selected_uart = None
@@ -341,9 +329,6 @@ class BaseProgrammer:
                     logger.debug(f"Порт уже был закрыт: {e}")
                 else:
                     logger.warning(f"ошибка при закрытии UART порта: {e}")
-                self.selected_uart = None
-            except Exception as e:
-                logger.warning(f"ошибка при закрытии UART порта: {e}")
                 self.selected_uart = None
 
     def find_devices(self):
@@ -355,54 +340,40 @@ class BaseProgrammer:
             raise RuntimeError(f"Ошибка USB backend: {e}")
 
         for vid, pid in STLINK_IDS:
-            try:
-                if backend is not None:
-                    devices_list = usb.core.find(
-                        find_all=True, idVendor=vid, idProduct=pid, backend=backend
-                    )
-                else:
-                    devices_list = usb.core.find(
-                        find_all=True, idVendor=vid, idProduct=pid
-                    )
+            if backend is not None:
+                devices_list = usb.core.find(
+                    find_all=True, idVendor=vid, idProduct=pid, backend=backend
+                )
+            else:
+                devices_list = usb.core.find(find_all=True, idVendor=vid, idProduct=pid)
 
-                for device in devices_list:
-                    try:
-                        serial = None
-                        bus = None
-                        address = None
-                        try:
-                            device.set_configuration()
-                            serial = usb.util.get_string(device, device.iSerialNumber)
-                            bus = device.bus
-                            address = device.address
-                        except Exception as e:
-                            pass
+            for device in devices_list:
+                serial = None
+                bus = None
+                address = None
+                device.set_configuration()
+                serial = usb.util.get_string(device, device.iSerialNumber)
+                bus = device.bus
+                address = device.address
 
-                        device_info = {
-                            "type": "ST-Link",
-                            "name": f"ST-Link {vid:04X}:{pid:04X}",
-                            "vid": vid,
-                            "pid": pid,
-                        }
+                device_info = {
+                    "type": "ST-Link",
+                    "name": f"ST-Link {vid:04X}:{pid:04X}",
+                    "vid": vid,
+                    "pid": pid,
+                }
 
-                        if serial:
-                            device_info["serial"] = serial
-                            device_info["name"] = (
-                                f"ST-Link {vid:04X}:{pid:04X} SN:{serial}"
-                            )
-                            logger.info(f"Найден ST-Link с серийным номером: {serial}")
+                if serial:
+                    device_info["serial"] = serial
+                    device_info["name"] = f"ST-Link {vid:04X}:{pid:04X} SN:{serial}"
+                    logger.info(f"Найден ST-Link с серийным номером: {serial}")
 
-                        if bus is not None:
-                            device_info["usb_bus"] = bus
-                        if address is not None:
-                            device_info["usb_address"] = address
+                if bus is not None:
+                    device_info["usb_bus"] = bus
+                if address is not None:
+                    device_info["usb_address"] = address
 
-                        self.devices.append(device_info)
-                    except Exception as e:
-                        logger.debug(f"Ошибка при обработке ST-Link устройства: {e}")
-                        continue
-            except Exception:
-                continue
+                self.devices.append(device_info)
 
         return self.devices
 
@@ -427,8 +398,11 @@ class BaseProgrammer:
         attempted_methods = []
 
         if device_type == "ST-Link":
-            lib_programmer = None
-            try:
+
+            stlink_lib_spec = importlib.util.find_spec(
+                "stm32_programmer.programmers.stlink_lib"
+            )
+            if stlink_lib_spec is not None:
                 from .stlink_lib import STLinkProgrammerLib
 
                 attempted_methods.append("STLinkProgrammerLib")
@@ -438,112 +412,92 @@ class BaseProgrammer:
                     logger.info("запись выполнена через STLinkProgrammerLib")
                 else:
                     last_error = "STLinkProgrammerLib: запись не удалась"
-            except Exception as e:
-                last_error = f"STLinkProgrammerLib: {e}"
-                success = False
-            finally:
-                if lib_programmer is not None:
-                    try:
-                        if hasattr(lib_programmer, "stlink") and lib_programmer.stlink:
-                            lib_programmer.stlink.disconnect()
-                    except Exception:
-                        pass
+
+                if hasattr(lib_programmer, "stlink") and lib_programmer.stlink:
+                    lib_programmer.stlink.disconnect()
+            else:
+                logger.debug(
+                    "STLinkProgrammerLib не доступен, используется альтернативный метод"
+                )
+                attempted_methods.append("STLinkProgrammerLib (не доступен)")
 
         if device_type == "ST-Link" and not success:
-            try:
-                from .stlink_cube import STLinkProgrammerCube
+            from .stlink_cube import STLinkProgrammerCube
 
-                programmer = STLinkProgrammerCube(self.selected)
-                if programmer.cube_path:
-                    attempted_methods.append("STM32CubeProgrammer")
-                    logger.info(
-                        f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
-                    )
-                    logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
-                    success = programmer.write_bytes(data, address)
-                    if success:
-                        logger.info("запись выполнена через STM32CubeProgrammer")
-                    else:
-                        last_error = "STM32CubeProgrammer: запись не удалась"
-                        logger.warning(f"запись через STM32CubeProgrammer не удалась")
+            programmer = STLinkProgrammerCube(self.selected)
+            if programmer.cube_path:
+                attempted_methods.append("STM32CubeProgrammer")
+                logger.info(
+                    f"попытка записи через STM32CubeProgrammer: {programmer.cube_path}"
+                )
+                logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
+                success = programmer.write_bytes(data, address)
+                if success:
+                    logger.info("запись выполнена через STM32CubeProgrammer")
                 else:
-                    attempted_methods.append("STM32CubeProgrammer (не найден)")
-                    last_error = "STM32CubeProgrammer: не найден"
-                    success = False
-            except Exception as e:
-                attempted_methods.append(f"STM32CubeProgrammer (ошибка: {e})")
-                last_error = f"STM32CubeProgrammer: {e}"
+                    last_error = "STM32CubeProgrammer: запись не удалась"
+                    logger.warning(f"запись через STM32CubeProgrammer не удалась")
+            else:
+                attempted_methods.append("STM32CubeProgrammer (не найден)")
+                last_error = "STM32CubeProgrammer: не найден"
                 success = False
 
         if device_type == "ST-Link" and not success:
-            try:
-                from .stlink_openocd import STLinkProgrammerOpenOCD
+            from .stlink_openocd import STLinkProgrammerOpenOCD
 
-                programmer = STLinkProgrammerOpenOCD(self.selected)
-                if programmer.openocd_path:
-                    attempted_methods.append("OpenOCD")
-                    logger.info(
-                        f"попытка записи через OpenOCD: {programmer.openocd_path}"
-                    )
-                    logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
-                    success = programmer.write_bytes(data, address)
-                    if success:
-                        logger.info("запись выполнена через OpenOCD")
-                    else:
-                        last_error = "OpenOCD: запись не удалась"
-                        logger.warning(f"запись через OpenOCD не удалась")
+            programmer = STLinkProgrammerOpenOCD(self.selected)
+            if programmer.openocd_path:
+                attempted_methods.append("OpenOCD")
+                logger.info(f"попытка записи через OpenOCD: {programmer.openocd_path}")
+                logger.info(f"запись {len(data)} байт по адресу {hex(address)}")
+                success = programmer.write_bytes(data, address)
+                if success:
+                    logger.info("запись выполнена через OpenOCD")
                 else:
-                    attempted_methods.append("OpenOCD (не найден)")
-                    last_error = "OpenOCD: не найден"
-                    success = False
-            except Exception as e:
-                attempted_methods.append(f"OpenOCD (ошибка: {e})")
-                last_error = f"OpenOCD: {e}"
+                    last_error = "OpenOCD: запись не удалась"
+                    logger.warning(f"запись через OpenOCD не удалась")
+            else:
+                attempted_methods.append("OpenOCD (не найден)")
+                last_error = "OpenOCD: не найден"
                 success = False
 
         if device_type == "ST-Link" and not success:
+            from .stlink import STLinkProgrammer
+
+            attempted_methods.append("STLinkProgrammer (прямой USB)")
+            logger.info("=" * 80)
+            logger.info("ПОПЫТКА ЗАПИСИ ЧЕРЕЗ ПРЯМОЙ USB ДОСТУП (STLinkProgrammer)")
+            logger.info(f"Размер данных: {len(data)} байт")
+            logger.info(f"Адрес записи: {hex(address)}")
+            logger.info("=" * 80)
+            programmer = STLinkProgrammer(self.selected)
             try:
-                from .stlink import STLinkProgrammer
+                success = programmer.write_bytes(data, address)
 
-                attempted_methods.append("STLinkProgrammer (прямой USB)")
-                logger.info("=" * 80)
-                logger.info("ПОПЫТКА ЗАПИСИ ЧЕРЕЗ ПРЯМОЙ USB ДОСТУП (STLinkProgrammer)")
-                logger.info(f"Размер данных: {len(data)} байт")
-                logger.info(f"Адрес записи: {hex(address)}")
-                logger.info("=" * 80)
-                programmer = STLinkProgrammer(self.selected)
-                try:
-                    success = programmer.write_bytes(data, address)
-
-                    if not success and hasattr(programmer, "reconnect"):
-                        logger.warning("запись не удалась, попытка переподключения...")
-                        if programmer.reconnect():
-                            logger.info(
-                                "переподключение успешно, повторная попытка записи..."
-                            )
-                            time.sleep(1)
-                            success = programmer.write_bytes(data, address)
-
-                    if success:
-                        logger.info("запись выполнена через прямой USB доступ")
-                    else:
-                        last_error = (
-                            "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)\n"
-                            "Возможные причины:\n"
-                            "  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство 🤔\n"
-                            "  - Устройство не подключено или не включено\n"
-                            "  - Проблемы с драйверами ST-Link\n"
-                            "Решение: закройте STM32CubeProgrammer и попробуйте снова"
+                if not success and hasattr(programmer, "reconnect"):
+                    logger.warning("запись не удалась, попытка переподключения...")
+                    if programmer.reconnect():
+                        logger.info(
+                            "переподключение успешно, повторная попытка записи..."
                         )
-                        logger.warning(f"запись через прямой USB доступ не удалась")
-                finally:
+                        time.sleep(1)
+                        success = programmer.write_bytes(data, address)
 
-                    if hasattr(programmer, "disconnect"):
-                        programmer.disconnect()
-            except Exception as e:
-                attempted_methods.append(f"STLinkProgrammer (ошибка: {e})")
-                last_error = f"STLinkProgrammer: {e}"
-                success = False
+                if success:
+                    logger.info("запись выполнена через прямой USB доступ")
+                else:
+                    last_error = (
+                        "STLinkProgrammer: запись не удалась (не удалось подключиться к целевому устройству)\n"
+                        "Возможные причины:\n"
+                        f"  - Возможно у вас где-то открыт STM32CubeProgrammer и он занял устройство {get_icon_emoji_fallback('thinking')}\n"
+                        "  - Устройство не подключено или не включено\n"
+                        "  - Проблемы с драйверами ST-Link\n"
+                        "Решение: закройте STM32CubeProgrammer и попробуйте снова"
+                    )
+                    logger.warning(f"запись через прямой USB доступ не удалась")
+            finally:
+                if hasattr(programmer, "disconnect"):
+                    programmer.disconnect()
 
         if device_type != "ST-Link":
             return False, "Неподдерживаемый тип устройства"

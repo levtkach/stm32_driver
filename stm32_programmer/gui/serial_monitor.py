@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QDateTime
-from PyQt5.QtGui import QFont, QTextCursor
+from PyQt5.QtGui import QFont, QTextCursor, QKeyEvent
 import html
 import logging
 
@@ -25,6 +25,73 @@ from stm32_programmer.utils.uart_commands import get_command_structure, build_co
 from stm32_programmer.utils.uart_settings import UARTSettings
 
 logger = logging.getLogger(__name__)
+
+
+class CommandInputLineEdit(QLineEdit):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.command_history = []
+        self.history_index = -1
+        self.current_input_before_history = ""
+        self.on_send_command = None
+
+    def set_command_history(self, history):
+        self.command_history = history
+
+    def set_send_callback(self, callback):
+        self.on_send_command = callback
+
+    def add_to_history(self, command):
+        if command and (
+            not self.command_history or self.command_history[-1] != command
+        ):
+            self.command_history.append(command)
+            if len(self.command_history) > 100:
+                self.command_history.pop(0)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key_Up:
+            if self.command_history:
+                if self.history_index == -1:
+                    self.current_input_before_history = self.text()
+                    self.history_index = len(self.command_history) - 1
+                elif self.history_index > 0:
+                    self.history_index -= 1
+
+                if 0 <= self.history_index < len(self.command_history):
+                    self.setText(self.command_history[self.history_index])
+            event.accept()
+            return
+        elif event.key() == Qt.Key_Down:
+            if self.history_index >= 0:
+                if self.history_index < len(self.command_history) - 1:
+                    self.history_index += 1
+                    self.setText(self.command_history[self.history_index])
+                else:
+                    self.history_index = -1
+                    self.setText(self.current_input_before_history)
+            event.accept()
+            return
+        elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if self.on_send_command:
+                self.on_send_command()
+            event.accept()
+            return
+        else:
+            super().keyPressEvent(event)
+            if self.history_index >= 0 and event.key() not in (
+                Qt.Key_Shift,
+                Qt.Key_Control,
+                Qt.Key_Alt,
+                Qt.Key_Meta,
+            ):
+                self.history_index = -1
+                self.current_input_before_history = ""
+
+    def reset_history_navigation(self):
+        self.history_index = -1
+        self.current_input_before_history = ""
 
 
 class UARTSettingsDialog(QDialog):
@@ -98,8 +165,8 @@ class SerialMonitorWidget(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
 
         port_layout = QHBoxLayout()
-        port_layout.setSpacing(8)
-        port_layout.setContentsMargins(8, 4, 8, 4)
+        port_layout.setSpacing(6)
+        port_layout.setContentsMargins(0, 0, 0, 0)
         port_label = QLabel("COM порт:")
         port_label.setMinimumWidth(150)
         port_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -118,20 +185,27 @@ class SerialMonitorWidget(QWidget):
         )
         port_container_layout.addWidget(self.combobox_ports, 1)
 
-        btn_refresh = QPushButton("↻")
-        btn_refresh.setProperty("refreshButton", True)
-        btn_refresh.setFixedSize(28, 28)
-        btn_refresh.setCursor(Qt.PointingHandCursor)
-        btn_refresh.setToolTip("Обновить список портов")
-        btn_refresh.clicked.connect(self.refresh_ports)
-        port_container_layout.addWidget(btn_refresh)
+        from .icon_manager import IconManager
+
+        theme = None
+        parent = self.parent()
+        if parent and hasattr(parent, "current_theme"):
+            theme = parent.current_theme
+        else:
+            theme = "dark"
+
+        self.icon_manager = IconManager(theme)
+        self.btn_refresh = QPushButton()
+        self.icon_manager.update_refresh_icon(self.btn_refresh)
+        self.btn_refresh.setProperty("refreshButton", True)
+        self.btn_refresh.setFixedSize(28, 28)
+        self.btn_refresh.setCursor(Qt.PointingHandCursor)
+        self.btn_refresh.setToolTip("Обновить список портов")
+        self.btn_refresh.clicked.connect(self.refresh_ports)
+        port_container_layout.addWidget(self.btn_refresh)
 
         port_container.setLayout(port_container_layout)
         port_layout.addWidget(port_container, 1)
-        layout.addLayout(port_layout)
-
-        settings_layout = QHBoxLayout()
-        settings_layout.setSpacing(8)
 
         self.btn_settings = QPushButton("⚙")
         self.btn_settings.setProperty("iconButton", True)
@@ -139,64 +213,33 @@ class SerialMonitorWidget(QWidget):
         self.btn_settings.setToolTip("Настройки UART")
         self.btn_settings.setCursor(Qt.PointingHandCursor)
         self.btn_settings.clicked.connect(self.show_settings_dialog)
-        settings_layout.addWidget(self.btn_settings)
+        port_layout.addWidget(self.btn_settings)
 
-        self.settings_label = QLabel(
-            f"Baud: {self.current_baud_rate} | Line: {self.current_line_ending}"
+        self.btn_start_stop = QPushButton()
+        self.icon_manager.update_play_icon(self.btn_start_stop, self.is_connected)
+        self.btn_start_stop.setProperty("programButton", True)
+        self.btn_start_stop.setFixedSize(28, 28)
+        self.btn_start_stop.setToolTip(
+            "Начать мониторинг" if not self.is_connected else "Остановить мониторинг"
         )
-        self.settings_label.setProperty("info", True)
-        settings_layout.addWidget(self.settings_label)
+        self.btn_start_stop.setCursor(Qt.PointingHandCursor)
+        self.btn_start_stop.clicked.connect(self.toggle_connection)
+        port_layout.addWidget(self.btn_start_stop)
 
-        settings_layout.addStretch()
+        self.btn_clear = QPushButton()
+        self.icon_manager.update_cross_icon(self.btn_clear)
+        self.btn_clear.setProperty("iconButton", True)
+        self.btn_clear.setFixedSize(28, 28)
+        self.btn_clear.setToolTip("Очистить логи")
+        self.btn_clear.setCursor(Qt.PointingHandCursor)
+        port_layout.addWidget(self.btn_clear)
 
-        self.btn_connect = QPushButton("⚡")
-        self.btn_connect.setProperty("iconButton", True)
-        self.btn_connect.setFixedSize(28, 28)
-        self.btn_connect.setToolTip("Подключиться/Отключиться")
-        self.btn_connect.setCursor(Qt.PointingHandCursor)
-        self.btn_connect.clicked.connect(self.toggle_connection)
-        settings_layout.addWidget(self.btn_connect)
+        layout.addLayout(port_layout)
 
-        layout.addLayout(settings_layout)
-
-        manual_input_layout = QHBoxLayout()
-        manual_input_layout.setSpacing(8)
-        manual_input_label = QLabel("Команда:")
-        manual_input_label.setMinimumWidth(150)
-        manual_input_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        manual_input_layout.addWidget(manual_input_label)
-
-        btn_set = QPushButton("SET")
-        btn_set.setProperty("iconButton", True)
-        btn_set.setFixedSize(40, 28)
-        btn_set.setToolTip("Вставить SET")
-        btn_set.setCursor(Qt.PointingHandCursor)
-        btn_set.clicked.connect(lambda: self.insert_command_prefix("SET "))
-        manual_input_layout.addWidget(btn_set)
-
-        btn_get = QPushButton("GET")
-        btn_get.setProperty("iconButton", True)
-        btn_get.setFixedSize(40, 28)
-        btn_get.setToolTip("Вставить GET")
-        btn_get.setCursor(Qt.PointingHandCursor)
-        btn_get.clicked.connect(lambda: self.insert_command_prefix("GET "))
-        manual_input_layout.addWidget(btn_get)
-
-        self.manual_input = QLineEdit()
-        self.manual_input.setPlaceholderText("Введите команду вручную...")
-        self.manual_input.setMinimumHeight(28)
-        self.manual_input.returnPressed.connect(self.send_manual_command)
-        manual_input_layout.addWidget(self.manual_input, 1)
-
-        btn_send_manual = QPushButton("➤")
-        btn_send_manual.setProperty("iconButton", True)
-        btn_send_manual.setFixedSize(28, 28)
-        btn_send_manual.setToolTip("Отправить команду")
-        btn_send_manual.setCursor(Qt.PointingHandCursor)
-        btn_send_manual.clicked.connect(self.send_manual_command)
-        manual_input_layout.addWidget(btn_send_manual)
-
-        layout.addLayout(manual_input_layout)
+        terminal_container = QWidget()
+        terminal_layout = QVBoxLayout()
+        terminal_layout.setSpacing(0)
+        terminal_layout.setContentsMargins(0, 0, 0, 0)
 
         self.console = QTextEdit()
         self.console.setReadOnly(True)
@@ -206,18 +249,41 @@ class SerialMonitorWidget(QWidget):
         font.setStyleHint(font.Monospace)
         font.setFixedPitch(True)
         self.console.setFont(font)
-        layout.addWidget(self.console)
+        terminal_layout.addWidget(self.console, 1)
 
-        clear_layout = QHBoxLayout()
-        clear_layout.addStretch()
-        btn_clear = QPushButton("✕")
-        btn_clear.setProperty("iconButton", True)
-        btn_clear.setFixedSize(28, 28)
-        btn_clear.setToolTip("Очистить логи")
-        btn_clear.setCursor(Qt.PointingHandCursor)
-        btn_clear.clicked.connect(self.console.clear)
-        clear_layout.addWidget(btn_clear)
-        layout.addLayout(clear_layout)
+        self.btn_clear.clicked.connect(self.console.clear)
+
+        input_container = QFrame()
+        input_container.setProperty("inputContainer", True)
+        input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(8, 4, 8, 4)
+        input_layout.setSpacing(8)
+
+        prompt_label = QLabel(">")
+        prompt_label.setProperty("info", True)
+        font = prompt_label.font()
+        font.setFamily("JetBrains Mono")
+        font.setPointSize(11)
+        prompt_label.setFont(font)
+        input_layout.addWidget(prompt_label)
+
+        self.manual_input = CommandInputLineEdit()
+        self.manual_input.setPlaceholderText("Введите команду...")
+        self.manual_input.setMinimumHeight(28)
+        self.manual_input.set_send_callback(self.send_manual_command)
+        input_layout.addWidget(self.manual_input, 1)
+
+        input_container.setLayout(input_layout)
+        terminal_layout.addWidget(input_container)
+
+        terminal_container.setLayout(terminal_layout)
+        layout.addWidget(terminal_container, 1)
+
+        self.settings_label = QLabel(
+            f"Baud: {self.current_baud_rate} | Line: {self.current_line_ending}"
+        )
+        self.settings_label.setProperty("info", True)
+        layout.addWidget(self.settings_label)
 
         self.setLayout(layout)
 
@@ -322,8 +388,10 @@ class SerialMonitorWidget(QWidget):
 
             if self.serial_port.is_open:
                 self.is_connected = True
-                self.btn_connect.setText("⚡")
-                self.btn_connect.setToolTip("Отключиться от порта")
+                self.icon_manager.update_play_icon(
+                    self.btn_start_stop, self.is_connected
+                )
+                self.btn_start_stop.setToolTip("Остановить мониторинг")
                 self.log(f"Подключено к {port_name}", msg_type="info")
 
                 self.stop_reading = False
@@ -352,8 +420,8 @@ class SerialMonitorWidget(QWidget):
 
         self.serial_port = None
         self.is_connected = False
-        self.btn_connect.setText("⚡")
-        self.btn_connect.setToolTip("Подключиться к порту")
+        self.icon_manager.update_play_icon(self.btn_start_stop, self.is_connected)
+        self.btn_start_stop.setToolTip("Начать мониторинг")
         self.log("Отключено", msg_type="info")
 
     def read_from_port(self):
@@ -386,14 +454,6 @@ class SerialMonitorWidget(QWidget):
                     self.log(f"Ошибка чтения: {e}", msg_type="error")
                 break
 
-    def insert_command_prefix(self, prefix):
-        current_text = self.manual_input.text()
-        cursor_pos = self.manual_input.cursorPosition()
-        new_text = current_text[:cursor_pos] + prefix + current_text[cursor_pos:]
-        self.manual_input.setText(new_text)
-        self.manual_input.setCursorPosition(cursor_pos + len(prefix))
-        self.manual_input.setFocus()
-
     def send_manual_command(self):
         if not self.is_connected or not self.serial_port:
             self.log("Порт не подключен", msg_type="error")
@@ -403,8 +463,11 @@ class SerialMonitorWidget(QWidget):
         if not command:
             return
 
+        self.manual_input.add_to_history(command)
+
         self.send_command(command)
         self.manual_input.clear()
+        self.manual_input.reset_history_navigation()
 
     def send_command(self, command):
         try:
@@ -414,7 +477,14 @@ class SerialMonitorWidget(QWidget):
             self.serial_port.write(command_bytes)
             self.serial_port.flush()
 
-            self.log(f"->> {command}", msg_type="command")
+            line_ending_str = line_ending_bytes.decode("utf-8", errors="replace")
+            command_with_ending = command + line_ending_str
+
+            command_display = command_with_ending.replace("\r", "\\r").replace(
+                "\n", "\\n"
+            )
+
+            self.log(f"->> {command_display}", msg_type="command")
         except Exception as e:
             self.log(f"Ошибка отправки команды: {e}", msg_type="error")
 
@@ -431,16 +501,79 @@ class SerialMonitorWidget(QWidget):
 
         message = html.escape(message)
 
+        is_light_theme = False
+        parent = self.parent()
+        if parent and hasattr(parent, "current_theme"):
+            is_light_theme = parent.current_theme == "light"
+
         if msg_type == "error":
-            color = "#ff5555"
+            color = "#e53e3e" if is_light_theme else "#ff5555"
         elif msg_type == "warning":
-            color = "#ffaa00"
+            color = "#dd6b20" if is_light_theme else "#ffaa00"
         elif msg_type == "command":
-            color = "#50fa7b"
+            color = "#38a169" if is_light_theme else "#50fa7b"
         elif msg_type == "response":
-            color = "#8be9fd"
+            color = "#3182ce" if is_light_theme else "#8be9fd"
         else:
-            color = "#e0e0e0"
+            color = "#1a202c" if is_light_theme else "#e0e0e0"
 
         self.console.append(f'<span style="color:{color}">{message}</span>')
         self.console.moveCursor(self.console.textCursor().End)
+
+    def update_theme(self, theme):
+        self.icon_manager.set_theme(theme)
+
+        self.icon_manager.update_refresh_icon(self.btn_refresh)
+        self.icon_manager.update_play_icon(self.btn_start_stop, self.is_connected)
+        self.icon_manager.update_cross_icon(self.btn_clear)
+
+        self.update_console_colors(theme)
+
+    def update_console_colors(self, theme=None):
+        if not hasattr(self, "console"):
+            return
+
+        if theme is None:
+            parent = self.parent()
+            if parent and hasattr(parent, "current_theme"):
+                theme = parent.current_theme
+            else:
+                theme = "dark"
+
+        is_light_theme = theme == "light"
+
+        html_content = self.console.toHtml()
+
+        if is_light_theme:
+            color_mapping = {
+                "#ff5555": "#e53e3e",
+                "#ffaa00": "#dd6b20",
+                "#50fa7b": "#38a169",
+                "#8be9fd": "#3182ce",
+                "#e0e0e0": "#1a202c",
+            }
+        else:
+            color_mapping = {
+                "#e53e3e": "#ff5555",
+                "#dd6b20": "#ffaa00",
+                "#38a169": "#50fa7b",
+                "#3182ce": "#8be9fd",
+                "#1a202c": "#e0e0e0",
+            }
+
+        for old_color, new_color in color_mapping.items():
+            html_content = html_content.replace(
+                f"color:{old_color}", f"color:{new_color}"
+            )
+            html_content = html_content.replace(
+                f"color: {old_color}", f"color: {new_color}"
+            )
+
+        cursor = self.console.textCursor()
+        scroll_position = self.console.verticalScrollBar().value()
+
+        self.console.setHtml(html_content)
+
+        self.console.verticalScrollBar().setValue(scroll_position)
+        cursor.movePosition(cursor.End)
+        self.console.setTextCursor(cursor)

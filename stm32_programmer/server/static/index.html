@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STM32 Programmer - Web Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        select, input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #7f8c8d;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress-container.active {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-message {
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status-message.active {
+            display: block;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-label {
+            display: block;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 2px dashed #e0e0e0;
+            border-radius: 6px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .file-input-label:hover {
+            border-color: #667eea;
+            background: #f0f0f0;
+        }
+
+        .file-name {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .refresh-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .refresh-btn:hover {
+            background: #5a6268;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .two-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .terminal {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 15px;
+            border-radius: 6px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .terminal.active {
+            display: block;
+        }
+
+        .terminal-line {
+            margin: 2px 0;
+            word-wrap: break-word;
+        }
+
+        .terminal-line.info {
+            color: #d4d4d4;
+        }
+
+        .terminal-line.status {
+            color: #4ec9b0;
+        }
+
+        .terminal-line.error {
+            color: #f48771;
+        }
+
+        .terminal-line.success {
+            color: #89d185;
+        }
+
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            color: #858585;
+            font-size: 11px;
+        }
+
+        .terminal-toggle {
+            background: #3c3c3c;
+            border: none;
+            color: #d4d4d4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .terminal-toggle:hover {
+            background: #4c4c4c;
+        }
+
+        @media (max-width: 768px) {
+            .two-columns {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><img src="/static/icons/wrench.svg" alt="🔧" width="32" height="32" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">🔧</span> STM32 Programmer</h1>
+        <p class="subtitle">Веб-интерфейс для программирования микроконтроллеров STM32</p>
+
+        <div class="section">
+            <div class="section-title">
+                Настройки устройства
+                <button class="refresh-btn" onclick="refreshDevices()"><img src="/static/icons/refresh.svg" alt="🔄" width="16" height="16" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">🔄</span> Обновить</button>
+            </div>
+            <div class="two-columns">
+                <div class="form-group">
+                    <label for="device-select">STM32 Устройство:</label>
+                    <select id="device-select">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="port-select">COM Порт:</label>
+                    <select id="port-select">
+                        <option value="">Загрузка...</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Файлы прошивки</div>
+            <div class="two-columns">
+                <div class="form-group">
+                    <label for="lv-firmware">LV Прошивка:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="lv-firmware-file" accept=".hex,.bin,.elf" style="display: none;" onchange="handleFileSelect('lv', this.files[0])">
+                        <label for="lv-firmware-file" class="file-input-label" id="lv-firmware-label">
+                            <img src="/static/icons/folder.svg" alt="📁" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">📁</span> Выберите файл или перетащите сюда
+                        </label>
+                        <div class="file-name" id="lv-firmware-name"></div>
+                        <input type="hidden" id="lv-firmware" value="">
+                        <select id="lv-firmware-select" onchange="selectFirmware('lv', this.value)" style="margin-top: 8px;">
+                            <option value="">Или выберите из загруженных...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="hv-firmware">HV Прошивка:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="hv-firmware-file" accept=".hex,.bin,.elf" style="display: none;" onchange="handleFileSelect('hv', this.files[0])">
+                        <label for="hv-firmware-file" class="file-input-label" id="hv-firmware-label">
+                            <img src="/static/icons/folder.svg" alt="📁" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">📁</span> Выберите файл или перетащите сюда
+                        </label>
+                        <div class="file-name" id="hv-firmware-name"></div>
+                        <input type="hidden" id="hv-firmware" value="">
+                        <select id="hv-firmware-select" onchange="selectFirmware('hv', this.value)" style="margin-top: 8px;">
+                            <option value="">Или выберите из загруженных...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="button-group">
+                <button class="btn-primary" id="start-btn" onclick="startProgramming()"><img src="/static/icons/play.svg" alt="▶️" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">▶️</span> Начать программирование</button>
+                <button class="btn-danger" id="stop-btn" onclick="stopProgramming()" disabled><img src="/static/icons/stop.svg" alt="⏹️" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">⏹️</span> Остановить</button>
+                <button class="btn-secondary" id="reset-btn" onclick="resetState()"><img src="/static/icons/refresh.svg" alt="🔄" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">🔄</span> Сбросить</button>
+            </div>
+
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill">0%</div>
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 5px;" id="progress-text"></div>
+            </div>
+
+            <div class="status-message" id="status-message"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let statusCheckInterval = null;
+
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            refreshDevices();
+            refreshPorts();
+            refreshFirmware();
+            startStatusCheck();
+            setupDragAndDrop();
+        });
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                return await response.json();
+            } catch (error) {
+                console.error('API Error:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function refreshDevices() {
+            const select = document.getElementById('device-select');
+            select.innerHTML = '<option value="">Загрузка...</option>';
+            const result = await apiCall('/api/devices');
+            if (result.success) {
+                select.innerHTML = '<option value="">Выберите устройство...</option>';
+                result.devices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.index;
+                    option.textContent = `${device.name} (${device.index})`;
+                    select.appendChild(option);
+                });
+            } else {
+                select.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        }
+
+        async function refreshPorts() {
+            const select = document.getElementById('port-select');
+            select.innerHTML = '<option value="">Загрузка...</option>';
+            const result = await apiCall('/api/ports');
+            if (result.success) {
+                select.innerHTML = '<option value="">Выберите порт...</option>';
+                result.ports.forEach(port => {
+                    const option = document.createElement('option');
+                    option.value = port.device;
+                    option.textContent = `${port.device} - ${port.description || port.hwid || ''}`;
+                    select.appendChild(option);
+                });
+            } else {
+                select.innerHTML = '<option value="">Ошибка загрузки</option>';
+            }
+        }
+
+        async function refreshFirmware() {
+            const lvSelect = document.getElementById('lv-firmware-select');
+            const hvSelect = document.getElementById('hv-firmware-select');
+            const result = await apiCall('/api/firmware/list');
+            if (result.success) {
+                const options = '<option value="">Или выберите из загруженных...</option>' +
+                    result.firmware_files.map(f => 
+                        `<option value="${f.path}">${f.name}</option>`
+                    ).join('');
+                lvSelect.innerHTML = options;
+                hvSelect.innerHTML = options;
+            }
+        }
+
+        function selectFirmware(type, path) {
+            if (path) {
+                document.getElementById(`${type}-firmware`).value = path;
+                document.getElementById(`${type}-firmware-name`).textContent = `Выбран: ${path}`;
+            }
+        }
+
+        async function handleFileSelect(type, file) {
+            if (!file) return;
+            
+            const fileNameEl = document.getElementById(`${type}-firmware-name`);
+            const labelEl = document.getElementById(`${type}-firmware-label`);
+            const hiddenInput = document.getElementById(`${type}-firmware`);
+            
+            
+            const allowedExts = ['.hex', '.bin', '.elf'];
+            const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+            if (!allowedExts.includes(fileExt)) {
+                showStatus(`Неподдерживаемый формат файла. Разрешенные: ${allowedExts.join(', ')}`, 'error');
+                addLogToTerminal(`Ошибка: Неподдерживаемый формат файла ${file.name}`, 'error');
+                return;
+            }
+            
+            fileNameEl.textContent = `Загрузка: ${file.name}...`;
+            labelEl.innerHTML = '<img src="/static/icons/loading.svg" alt="⏳" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display=\'none\'; this.nextSibling.style.display=\'inline\';"><span style="display:none;">⏳</span> Загрузка...';
+            addLogToTerminal(`Загрузка файла ${file.name}...`, 'info');
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch(`${API_BASE}/api/firmware/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    hiddenInput.value = result.path;
+                    fileNameEl.innerHTML = `<img src="/static/icons/check.svg" alt="✓" width="16" height="16" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">✓</span> ${file.name}`;
+                    fileNameEl.style.color = '#28a745';
+                    labelEl.innerHTML = '<img src="/static/icons/folder.svg" alt="📁" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display=\'none\'; this.nextSibling.style.display=\'inline\';"><span style="display:none;">📁</span> Файл загружен';
+                    showStatus(`Файл ${file.name} успешно загружен`, 'success');
+                    addLogToTerminal(`Файл ${file.name} успешно загружен и проверен`, 'success');
+                    if (result.warnings && result.warnings.length > 0) {
+                        result.warnings.forEach(warning => {
+                            addLogToTerminal(`<img src="/static/icons/warning.svg" alt="⚠️" width="16" height="16" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">⚠️</span> ${warning}`, 'error');
+                        });
+                    }
+                    
+                    refreshFirmware();
+                } else {
+                    fileNameEl.innerHTML = `<img src="/static/icons/cross.svg" alt="✗" width="16" height="16" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">✗</span> Ошибка: ${result.error}`;
+                    fileNameEl.style.color = '#dc3545';
+                    labelEl.innerHTML = '<img src="/static/icons/folder.svg" alt="📁" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display=\'none\'; this.nextSibling.style.display=\'inline\';"><span style="display:none;">📁</span> Выберите файл или перетащите сюда';
+                    showStatus(`Ошибка загрузки: ${result.error}`, 'error');
+                    addLogToTerminal(`Ошибка загрузки: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                fileNameEl.innerHTML = `<img src="/static/icons/cross.svg" alt="✗" width="16" height="16" style="vertical-align: middle;" onerror="this.style.display='none'; this.nextSibling.style.display='inline';"><span style="display:none;">✗</span> Ошибка: ${error.message}`;
+                fileNameEl.style.color = '#dc3545';
+                labelEl.innerHTML = '<img src="/static/icons/folder.svg" alt="📁" width="20" height="20" style="vertical-align: middle;" onerror="this.style.display=\'none\'; this.nextSibling.style.display=\'inline\';"><span style="display:none;">📁</span> Выберите файл или перетащите сюда';
+                showStatus(`Ошибка загрузки: ${error.message}`, 'error');
+                addLogToTerminal(`Ошибка: ${error.message}`, 'error');
+            }
+        }
+
+        
+        function setupDragAndDrop() {
+            ['lv', 'hv'].forEach(type => {
+                const label = document.getElementById(`${type}-firmware-label`);
+                const fileInput = document.getElementById(`${type}-firmware-file`);
+                
+                label.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    label.style.borderColor = '#667eea';
+                    label.style.background = '#e8eaf6';
+                });
+                
+                label.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    label.style.borderColor = '#e0e0e0';
+                    label.style.background = '#f8f9fa';
+                });
+                
+                label.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    label.style.borderColor = '#e0e0e0';
+                    label.style.background = '#f8f9fa';
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        handleFileSelect(type, files[0]);
+                    }
+                });
+            });
+        }
+
+        async function startProgramming() {
+            const lvPath = document.getElementById('lv-firmware').value.trim();
+            const hvPath = document.getElementById('hv-firmware').value.trim();
+            const deviceIndex = parseInt(document.getElementById('device-select').value);
+            const uartPort = document.getElementById('port-select').value;
+
+            if (!lvPath && !hvPath) {
+                showStatus('Необходимо указать хотя бы один файл прошивки', 'error');
+                return;
+            }
+
+            if (!deviceIndex) {
+                showStatus('Выберите STM32 устройство', 'error');
+                return;
+            }
+
+            if (!uartPort) {
+                showStatus('Выберите COM порт', 'error');
+                return;
+            }
+
+            const result = await apiCall('/api/program/start', 'POST', {
+                lv_firmware_path: lvPath || null,
+                hv_firmware_path: hvPath || null,
+                device_index: deviceIndex,
+                uart_port: uartPort
+            });
+
+            if (result.success) {
+                showStatus('Программирование запущено', 'info');
+                document.getElementById('start-btn').disabled = true;
+                document.getElementById('stop-btn').disabled = false;
+                document.getElementById('progress-container').classList.add('active');
+            } else {
+                showStatus(`Ошибка: ${result.error}`, 'error');
+            }
+        }
+
+        async function stopProgramming() {
+            const result = await apiCall('/api/program/stop', 'POST');
+            if (result.success) {
+                showStatus('Запрос на остановку отправлен', 'info');
+            } else {
+                showStatus(`Ошибка: ${result.error}`, 'error');
+            }
+        }
+
+        async function resetState() {
+            const result = await apiCall('/api/program/reset', 'POST');
+            if (result.success) {
+                showStatus('Состояние сброшено', 'info');
+                document.getElementById('start-btn').disabled = false;
+                document.getElementById('stop-btn').disabled = true;
+                document.getElementById('progress-container').classList.remove('active');
+                document.getElementById('progress-fill').style.width = '0%';
+                document.getElementById('progress-fill').textContent = '0%';
+                document.getElementById('progress-text').textContent = '';
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status-message');
+            statusEl.textContent = message;
+            statusEl.className = `status-message active ${type}`;
+            setTimeout(() => {
+                statusEl.classList.remove('active');
+            }, 5000);
+        }
+
+        let lastLogCount = 0;
+        let terminalVisible = false;
+
+        function toggleTerminal() {
+            const terminal = document.getElementById('terminal');
+            terminalVisible = !terminalVisible;
+            terminal.classList.toggle('active', terminalVisible);
+        }
+
+        function addLogToTerminal(message, type = 'info') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = `terminal-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        async function updateLogs() {
+            const result = await apiCall('/api/logs');
+            if (result.success && result.logs) {
+                if (result.logs.length > lastLogCount) {
+                    const newLogs = result.logs.slice(lastLogCount);
+                    newLogs.forEach(log => {
+                        addLogToTerminal(log.message, log.type || 'info');
+                    });
+                    lastLogCount = result.logs.length;
+                }
+            }
+        }
+
+        function startStatusCheck() {
+            statusCheckInterval = setInterval(async () => {
+                const result = await apiCall('/api/program/status');
+                if (result.success) {
+                    const state = result.state;
+                    const progressContainer = document.getElementById('progress-container');
+                    const progressFill = document.getElementById('progress-fill');
+                    const progressText = document.getElementById('progress-text');
+                    const startBtn = document.getElementById('start-btn');
+                    const stopBtn = document.getElementById('stop-btn');
+
+                    if (state.is_programming) {
+                        progressContainer.classList.add('active');
+                        const percent = state.progress.percent || 0;
+                        progressFill.style.width = `${percent}%`;
+                        progressFill.textContent = `${percent}%`;
+                        progressText.textContent = state.progress.status || state.progress.message || '';
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                    } else {
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                    }
+
+                    if (state.result) {
+                        if (state.result.success) {
+                            showStatus(state.result.message, 'success');
+                            addLogToTerminal(state.result.message, 'success');
+                        } else {
+                            showStatus(state.result.message, 'error');
+                            addLogToTerminal(state.result.message, 'error');
+                        }
+                        progressContainer.classList.remove('active');
+                    }
+                }
+                
+                updateLogs();
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
+

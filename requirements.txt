@@ -3,3 +3,5 @@ pyusb
 libusb-package
 pyinstaller
 PyQt5
+flask
+flask-cors

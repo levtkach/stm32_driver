@@ -7,6 +7,7 @@ import time
 import serial
 from serial.tools import list_ports
 from .base import BaseProgrammer
+from stm32_programmer.utils.icon_loader import get_icon_emoji_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,6 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
     time.sleep(0.1)
 
     try:
-
         port_timeout = 3.0 if sys.platform == "win32" else 3.0
 
         serial_port = serial.Serial(
@@ -132,10 +132,7 @@ def detect_serial_port(selected_device):
     if not selected_device:
         return None
 
-    try:
-        ports = list(list_ports.comports())
-    except Exception:
-        return None
+    ports = list(list_ports.comports())
 
     if not ports:
         return None
@@ -656,7 +653,7 @@ def validate_status(status_dict, expected_values, ignore_fields=None):
                 errors.append(error_msg)
             else:
                 logger.debug(
-                    f"  ✓ параметр '{key}': '{actual_str}' совпадает с ожидаемым"
+                    f"  {get_icon_emoji_fallback('check')} параметр '{key}': '{actual_str}' совпадает с ожидаемым"
                 )
 
     is_valid = len(errors) == 0
@@ -1085,21 +1082,25 @@ def run_test_plan(
                         if actual_value is not None
                         else False
                     )
-                    status_icon = "✓" if match else "✗"
+                    status_icon = (
+                        get_icon_emoji_fallback("check")
+                        if match
+                        else get_icon_emoji_fallback("cross")
+                    )
                     logger.info(
                         f"  {status_icon} {key}: ожидалось '{expected_value}', получено '{actual_value}'"
                     )
 
                 if is_valid:
                     logger.info(
-                        f"✓ ВАЛИДАЦИЯ УСПЕШНА на попытке {validation_attempt + 1}"
+                        f"{get_icon_emoji_fallback('check')} ВАЛИДАЦИЯ УСПЕШНА на попытке {validation_attempt + 1}"
                     )
                     validation_success = True
                     final_status_dict = status_dict
                     break
                 else:
                     logger.warning(
-                        f"✗ ВАЛИДАЦИЯ НЕУСПЕШНА на попытке {validation_attempt + 1}"
+                        f"{get_icon_emoji_fallback('cross')} ВАЛИДАЦИЯ НЕУСПЕШНА на попытке {validation_attempt + 1}"
                     )
                     final_errors = errors
                     final_status_dict = status_dict
@@ -1108,9 +1109,10 @@ def run_test_plan(
 
             logger.info("=" * 80)
             if validation_success:
-                logger.info(f"✓ Шаг '{step_name}': все проверки пройдены")
+                check_icon = get_icon_emoji_fallback("check")
+                logger.info(f"{check_icon} Шаг '{step_name}': все проверки пройдены")
                 if status_callback:
-                    status_callback(f"✓ {step_name}: проверки пройдены")
+                    status_callback(f"{check_icon} {step_name}: проверки пройдены")
             else:
                 error_msg = f"Шаг '{step_name}': ошибки валидации после {max_validation_retries} попыток"
                 logger.error(error_msg)
@@ -1261,7 +1263,7 @@ def program_device(
                 )
             except Exception as e:
                 logger.warning(f"ошибка при очистке буферов: {e}")
-            # Дополнительная задержка после очистки буферов
+
             time.sleep(0.5)
 
         if progress_callback:
@@ -1590,7 +1592,7 @@ def program_device(
                                 time.sleep(0.5)
                                 delayed_buffer = b""
                                 delayed_start_time = time.time()
-                                delayed_wait_time = 2.0  # Дополнительное ожидание для задержанных ответов
+                                delayed_wait_time = 2.0
                                 logger.info(
                                     f"дополнительное чтение ответа в течение {delayed_wait_time} сек..."
                                 )
@@ -1669,7 +1671,9 @@ def program_device(
                             if check_current_mode(
                                 programmer, target_mode, max_retries=2, retry_delay=0.5
                             ):
-                                logger.info(f"✓ Режим {target_mode} уже установлен!")
+                                logger.info(
+                                    f"{get_icon_emoji_fallback('check')} Режим {target_mode} уже установлен!"
+                                )
                                 switch_success = True
                         except Exception as e:
                             logger.warning(f"ошибка при проверке текущего режима: {e}")
@@ -1701,7 +1705,9 @@ def program_device(
                                 )
 
                                 if alt_success:
-                                    logger.info("✓ Альтернативная команда успешна!")
+                                    logger.info(
+                                        f"{get_icon_emoji_fallback('check')} Альтернативная команда успешна!"
+                                    )
                                     switch_success = True
                                 else:
                                     logger.warning(
@@ -1743,7 +1749,7 @@ def program_device(
 
                                 if alt_success:
                                     logger.info(
-                                        "✓ Альтернативная команда (lowercase) успешна!"
+                                        f"{get_icon_emoji_fallback('check')} Альтернативная команда (lowercase) успешна!"
                                     )
                                     switch_success = True
                                 else:
@@ -1779,7 +1785,7 @@ def program_device(
                                         retry_delay=0.5,
                                     ):
                                         logger.info(
-                                            f"✓ Режим {target_mode} установлен после прямой отправки!"
+                                            f"{get_icon_emoji_fallback('check')} Режим {target_mode} установлен после прямой отправки!"
                                         )
                                         switch_success = True
                                     else:
@@ -1804,7 +1810,9 @@ def program_device(
                                 )
 
                                 if alt_success:
-                                    logger.info("✓ Команда с CRLF успешна!")
+                                    logger.info(
+                                        f"{get_icon_emoji_fallback('check')} Команда с CRLF успешна!"
+                                    )
                                     switch_success = True
                                 else:
                                     logger.warning("команда с CRLF не получила ответа")
@@ -2178,7 +2186,7 @@ def program_device(
                     logger.error(f"Тестирование не пройдено: {test_message}")
             else:
                 logger.warning("UART порт не открыт, пропускаем тестирование")
-                test_success = True  # Нет тестирования - считаем успехом
+                test_success = True
         else:
             failed_modes = [mode for mode, result in results.items() if not result]
             error_msg = f"Ошибка записи для режимов: {', '.join(failed_modes)}"
