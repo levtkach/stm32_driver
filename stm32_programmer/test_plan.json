@@ -5,15 +5,19 @@
         "name": "Установка профиля в 00",
         "command": "SET SWICH_PROFILE=00",
         "expected_response": "SWICH_PROFILE=00",
-        "wait_time": 10,
-        "description": "Установка профиля переключения в 00"
+        "wait_time": 5,
+        "description": "Установка профиля переключения в 00",
+        "check_na_error": true,
+        "na_error_message": "Ошибка на линии PMBUS при установке SWICH_PROFILE"
       },
       {
         "name": "Установка режима в 00",
         "command": "SET SWICH_MODE=00",
         "expected_response": "SWICH_MODE=00",
-        "wait_time": 10,
-        "description": "Установка режима переключения в 00"
+        "wait_time": 5,
+        "description": "Установка режима переключения в 00",
+        "check_na_error": true,
+        "na_error_message": "Ошибка на линии PMBUS при установке SWICH_MODE"
       },
       {
         "name": "Проверка статуса (режим 00)",
@@ -42,16 +46,31 @@
             "power_ok": "0",
             "cold_r_bus": "0"
           },
+          "voltage_checks": {
+            "cur3v3_HV": {
+              "min": 2000,
+              "max": 2200
+            },
+            "cur3v3_LV": {
+              "min": 2000,
+              "max": 2200
+            },
+            "Current_HV": {
+              "min": 250,
+              "max": 350
+            },
+            "Current_LV": {
+              "min": 550,
+              "max": 650
+            }
+          },
           "ignore_fields": [
             "SWICH_UART1__2",
             "SWICH_SWD1__2",
             "DSC_status",
+            "DSC_I2C",
             "EN_12V",
             "EN_STLINK",
-            "cur3v3_HV",
-            "cur3v3_LV",
-            "Current_HV",
-            "Current_LV",
             "Mode",
             "Profile"
           ]
@@ -61,8 +80,10 @@
         "name": "Установка режима в 01",
         "command": "SET SWICH_MODE=01",
         "expected_response": "SWICH_MODE=01",
-        "wait_time": 10,
-        "description": "Установка режима переключения в 01"
+        "wait_time": 5,
+        "description": "Установка режима переключения в 01",
+        "check_na_error": true,
+        "na_error_message": "Ошибка на линии PMBUS при установке SWICH_MODE"
       },
       {
         "name": "Проверка статуса (режим 01)",
@@ -91,16 +112,31 @@
             "power_ok": "0",
             "cold_r_bus": "1"
           },
+          "voltage_checks": {
+            "cur3v3_HV": {
+              "min": 2000,
+              "max": 2200
+            },
+            "cur3v3_LV": {
+              "min": 2000,
+              "max": 2200
+            },
+            "Current_HV": {
+              "min": 1100,
+              "max": 1200
+            },
+            "Current_LV": {
+              "min": 800,
+              "max": 900
+            }
+          },
           "ignore_fields": [
             "SWICH_UART1__2",
             "SWICH_SWD1__2",
             "DSC_status",
+            "DSC_I2C",
             "EN_12V",
             "EN_STLINK",
-            "cur3v3_HV",
-            "cur3v3_LV",
-            "Current_HV",
-            "Current_LV",
             "Mode",
             "Profile"
           ]
@@ -110,45 +146,20 @@
         "name": "Установка режима в FF",
         "command": "SET SWICH_MODE=FF",
         "expected_response": "SWICH_MODE=FF",
-        "wait_time": 10,
-        "description": "Установка режима переключения в FF"
+        "wait_time": 5,
+        "description": "Установка режима переключения в FF",
+        "check_na_error": true,
+        "na_error_message": "Ошибка на линии PMBUS при установке SWICH_MODE"
       },
       {
         "name": "Установка профиля в FF",
         "command": "SET SWICH_PROFILE=FF",
         "expected_response": "SWICH_PROFILE=FF",
-        "wait_time": 10,
-        "description": "Установка профиля переключения в FF"
-      },
-      {
-        "name": "Демонстрация LED4: установка yellow",
-        "command": "SET LED4=YELLOW",
-        "expected_response": "LED4=ON",
-        "wait_time": 1,
-        "description": "Демонстрация установки LED4 в YELLOW"
-      },
-      {
-        "name": "Демонстрация LED4: установка blink_on",
-        "command": "SET LED4=BLINK_ON",
-        "expected_response": "LED4=BLINK_ON",
-        "wait_time": 1,
-        "description": "Демонстрация установки LED4 в BLINK_ON"
-      },
-      {
-        "name": "Демонстрация LED4: установка red",
-        "command": "SET LED4=RED",
-        "expected_response": "LED4=ON",
-        "wait_time": 1,
-        "description": "Демонстрация установки LED4 в RED"
-      },
-      {
-        "name": "Демонстрация LED4: установка green",
-        "command": "SET LED4=GREEN",
-        "expected_response": "LED4=ON",
-        "wait_time": 1,
-        "description": "Демонстрация установки LED4 в GREEN"
+        "wait_time": 5,
+        "description": "Установка профиля переключения в FF",
+        "check_na_error": true,
+        "na_error_message": "Ошибка на линии PMBUS при установке SWICH_PROFILE"
       }
     ]
   }
 }
-

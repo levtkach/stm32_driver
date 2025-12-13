@@ -102,5 +102,8 @@ reader.py
 
 logs/
 archive/
+backups/
 build_gui.spec
 stm32_programmer_gui.py
+.backup_dir
+.txt

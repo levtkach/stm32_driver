@@ -18,11 +18,13 @@ from PyQt5.QtWidgets import (
     QTabWidget,
 )
 from PyQt5.QtGui import QCloseEvent, QMouseEvent, QPainter
+from PyQt5.QtCore import QSize
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QDateTime, QSettings, QTimer
 import serial.tools.list_ports
 import threading
 from pathlib import Path
 import html
+import re
 from stm32_programmer.programmers.core import (
     setup_logging,
     program_device,
@@ -36,7 +38,7 @@ from .serial_monitor import SerialMonitorWidget
 from .device_memory import DeviceMemoryWidget
 from .button_animation import DeleteAnimation
 from .icon_manager import IconManager
-from stm32_programmer.utils.icon_loader import get_icon_emoji_fallback
+from stm32_programmer.utils.icon_loader import get_icon_emoji_fallback, get_qt_icon
 import logging
 
 logger = logging.getLogger(__name__)
@@ -178,7 +180,16 @@ class STM32ProgrammerGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("STM32 Programmer")
-        self.setGeometry(200, 200, 800, 750)
+        
+      
+        self.settings = QSettings("STM32Programmer", "FirmwarePaths")
+        geometry = self.settings.value("window_geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+      
+            self.setGeometry(200, 200, 800, 750)
+        
         self.setMinimumSize(700, 600)
 
         self.lv_file_path = ""
@@ -190,7 +201,6 @@ class STM32ProgrammerGUI(QWidget):
         self.programmer = BaseProgrammer()
         self.lv_status = None
         self.hv_status = None
-        self.settings = QSettings("STM32Programmer", "FirmwarePaths")
         self.current_device_id = None
         self.current_port = None
         self.current_theme = self.settings.value("theme", "dark")
@@ -198,6 +208,10 @@ class STM32ProgrammerGUI(QWidget):
         self.init_sounds()
         logger, log_file = setup_logging()
         self.log_file = log_file
+        self.last_updating_line_key = None 
+        self.stopping_animation_timer = QTimer()
+        self.stopping_animation_timer.timeout.connect(self._update_stopping_animation)
+        self.stopping_dot_count = 0
         self.init_ui()
         self.apply_theme(self.current_theme)
 
@@ -283,12 +297,96 @@ class STM32ProgrammerGUI(QWidget):
         except Exception:
             pass
 
+    def _colorize_error_message(self, message):
+        """Подкрашивает команды и ответы в сообщении об ошибке"""
+        is_light_theme = self.current_theme == "light"
+        command_color = "#38a169" if is_light_theme else "#50fa7b"
+        response_color = "#3182ce" if is_light_theme else "#8be9fd"
+        
+        
+        message = html.escape(message)
+        
+        
+        command_patterns = [
+            (r'GET STATUS', command_color),
+            (r'SWICH_MODE=\w+', command_color),  
+            (r'SWICH_PROFILE=\w+', command_color),
+            (r'SET LED\d+=\w+', command_color),
+            (r'GET \w+', command_color),
+        ]
+        
+        
+        response_patterns = [
+            (r'LED\d+=(ON|OFF|RED|GREEN|BLUE)', response_color),
+            (r'<<- (.*?)(?=\n|$)', response_color), 
+            (r'->> (.*?)(?=\n|$)', command_color),  
+        ]
+        
+        
+        message = re.sub(
+            r'->> ([^\n]+)',
+            f'->> <span style="color:{command_color}">\\1</span>',
+            message,
+            flags=re.IGNORECASE
+        )
+        
+        
+        message = re.sub(
+            r'<<- ([^\n]+)',
+            f'<<- <span style="color:{response_color}">\\1</span>',
+            message,
+            flags=re.IGNORECASE
+        )
+        
+        
+        for pattern, color in command_patterns:
+        
+            def replace_command(match):
+                text = match.group(0)
+        
+                if '<span style="color:' not in text:
+                    return f'<span style="color:{color}">{text}</span>'
+                return text
+            message = re.sub(
+                pattern,
+                replace_command,
+                message,
+                flags=re.IGNORECASE
+            )
+        
+        
+        for pattern, color in response_patterns:
+            if pattern.startswith('<<-') or pattern.startswith('->>'):
+                continue  
+            def replace_response(match):
+                text = match.group(0)
+                
+                if '<span style="color:' not in text:
+                    return f'<span style="color:{color}">{text}</span>'
+                return text
+            message = re.sub(
+                pattern,
+                replace_response,
+                message,
+                flags=re.IGNORECASE
+            )
+        
+        return message
+
     def show_message_box(
         self, title, message, icon_type=QMessageBox.Information, buttons=None
     ):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle(title)
-        msg_box.setText(message)
+        
+        
+        if icon_type == QMessageBox.Critical:
+            colored_message = self._colorize_error_message(message)
+            msg_box.setTextFormat(Qt.RichText)
+            msg_box.setText(colored_message)
+        else:
+            msg_box.setText(message)
+        
         msg_box.setIcon(icon_type)
         if icon_type == QMessageBox.Information:
             self.play_sound("success")
@@ -299,8 +397,6 @@ class STM32ProgrammerGUI(QWidget):
 
         if buttons is None:
             buttons = QMessageBox.Ok
-
-        return msg_box.exec_()
 
         if buttons == (QMessageBox.Yes | QMessageBox.No):
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
@@ -317,6 +413,40 @@ class STM32ProgrammerGUI(QWidget):
                 ok_button = msg_box.button(QMessageBox.Ok)
                 if ok_button:
                     ok_button.setText("ОК")
+            
+            
+            if icon_type == QMessageBox.Critical:
+            
+                ok_button = msg_box.button(QMessageBox.Ok)
+                ok_height = ok_button.height() if ok_button else 32
+                
+                copy_button = QPushButton()
+                copy_button.setToolTip("Копировать текст ошибки")
+                copy_button.setFixedHeight(ok_height)  
+                copy_button.setMinimumWidth(ok_height) 
+                copy_button.setAutoDefault(False)
+                copy_button.setDefault(False)
+                copy_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                
+                
+                copy_icon = get_qt_icon("copy", int(ok_height * 0.6), theme=self.current_theme)
+                if not copy_icon.isNull():
+                    copy_button.setIcon(copy_icon)
+                    copy_button.setIconSize(QSize(int(ok_height * 0.6), int(ok_height * 0.6)))
+                else:
+                    copy_button.setText(get_icon_emoji_fallback("copy"))
+                
+                
+                def copy_without_close():
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(message)
+                    msg_box.setResult(QMessageBox.NoButton)
+                
+                copy_button.clicked.connect(copy_without_close)
+                
+                
+                msg_box.addButton(copy_button, QMessageBox.ActionRole)
+            
             return msg_box.exec_()
 
     def init_ui(self):
@@ -676,6 +806,8 @@ class STM32ProgrammerGUI(QWidget):
 
     def closeEvent(self, event):
         logger.info("Сохранение состояния при закрытии приложения...")
+        
+        self.settings.setValue("window_geometry", self.saveGeometry())
         self._save_firmware_paths()
         self._save_last_device_and_port()
 
@@ -1240,7 +1372,7 @@ class STM32ProgrammerGUI(QWidget):
         self.btn_refresh_devices.setEnabled(is_enabled)
         self.btn_refresh_ports.setEnabled(is_enabled)
 
-    def log(self, message, msg_type="info"):
+    def log(self, message, msg_type="info", update_key=None):
         if not hasattr(self, "console") or self.console is None:
             return
 
@@ -1258,16 +1390,49 @@ class STM32ProgrammerGUI(QWidget):
 
         if msg_type == "error":
             color = "#e53e3e" if is_light_theme else "#ff5555"
+            font_weight = "normal"
         elif msg_type == "warning":
             color = "#dd6b20" if is_light_theme else "#ffaa00"
+            font_weight = "normal"
+        elif msg_type == "main_stage":
+            
+            color = "#d69e2e" if is_light_theme else "#ffd700"
+            font_weight = "bold"
         elif msg_type == "command":
             color = "#38a169" if is_light_theme else "#50fa7b"
+            font_weight = "normal"
         elif msg_type == "response":
             color = "#3182ce" if is_light_theme else "#8be9fd"
+            font_weight = "normal"
         else:
             color = "#1a202c" if is_light_theme else "#e0e0e0"
+            font_weight = "normal"
 
-        self.console.append(f'<span style="color:{color}">{message}</span>')
+        formatted_message = f'<span style="color:{color}; font-weight:{font_weight}">{message}</span>'
+        
+        
+        if update_key is not None:
+            if self.last_updating_line_key == update_key:
+        
+                cursor = self.console.textCursor()
+                cursor.movePosition(cursor.End)
+        
+                cursor.movePosition(cursor.StartOfBlock, cursor.KeepAnchor)
+        
+                if cursor.hasSelection():
+                    cursor.removeSelectedText()
+        
+                cursor.insertHtml(formatted_message)
+                self.console.setTextCursor(cursor)
+            else:
+        
+                self.console.append(formatted_message)
+                self.last_updating_line_key = update_key
+        else:
+        
+            self.console.append(formatted_message)
+            self.last_updating_line_key = None
+        
         self.console.moveCursor(self.console.textCursor().End)
 
     def toggle_programming(self):
@@ -1276,17 +1441,30 @@ class STM32ProgrammerGUI(QWidget):
         else:
             self.start_programming()
 
+    def _update_stopping_animation(self):
+        
+        if not self.is_stopping:
+            self.stopping_animation_timer.stop()
+            return
+        
+        self.stopping_dot_count = (self.stopping_dot_count % 3) + 1
+        dots = "." * self.stopping_dot_count
+        self.current_process_label.setText(f"Остановка{dots}")
+    
     def stop_programming(self):
         if not self.is_programming or not self.programming_thread:
             return
         self.is_stopping = True
-        self.current_process_label.setText("Остановка...")
+        self.stopping_dot_count = 0
+        self.current_process_label.setText("Остановка.")
         color = self.get_process_label_color("stopping")
         self.current_process_label.setStyleSheet(
             f"color: {color}; font-weight: 500; padding: 4px;"
         )
         self.current_process_label.show()
         self.current_process_label.update()
+        
+        self.stopping_animation_timer.start(400) 
         QApplication.processEvents()
         QApplication.processEvents()
         if self.programming_thread:
@@ -1418,23 +1596,53 @@ class STM32ProgrammerGUI(QWidget):
 
     def on_progress_updated(self, message):
         if self.is_stopping:
-            self.current_process_label.setText("Остановка...")
+            
+            if not self.stopping_animation_timer.isActive():
+                self.stopping_animation_timer.start(400)
             color = self.get_process_label_color("stopping")
             self.current_process_label.setStyleSheet(
                 f"color: {color}; font-weight: 500; padding: 4px;"
             )
             return
+        
+        
+        import re
+        update_key = None
+        if "->>" in message and "(попытка" in message:
+        
+            match = re.match(r'(.*?)\s*\(попытка\s+\d+/\d+\)', message)
+            if match:
+                update_key = match.group(1).strip()
+        
         if message.startswith("->>"):
-            self.log(message, msg_type="command")
-        elif message.startswith("<<-"):
-            self.log(message, msg_type="response")
+            self.log(message, msg_type="command", update_key=update_key)
+        elif message.startswith("<<"):
+            self.log(message, msg_type="response", update_key=update_key)
         else:
-            self.log(message, msg_type="info")
+            self.log(message, msg_type="info", update_key=update_key)
 
     def on_status_updated(self, message):
+        
+        main_stages = [
+            "Начало программирования",
+            "Инициализация",
+            "Включение питания",
+            "Переключение в режим",
+            "Загрузка прошивки для режима",
+            "Запись",
+            "ЗАПИСАН",
+            "Результат:",
+            "Тестирование",
+            "Выключение питания",
+            "Переподключение устройства",
+        ]
+        
+        is_main_stage = any(stage in message for stage in main_stages)
+        
         msg_type = (
             "error"
             if "ошибка" in message.lower() or "error" in message.lower()
+            else "main_stage" if is_main_stage
             else "info"
         )
         self.log(message, msg_type=msg_type)
@@ -1508,6 +1716,8 @@ class STM32ProgrammerGUI(QWidget):
     def on_programming_finished(self, success, message):
         self.is_programming = False
         self.is_stopping = False
+        
+        self.stopping_animation_timer.stop()
         self.update_buttons_state()
         self.programming_progress_bar.hide()
         self.testing_progress_bar.hide()

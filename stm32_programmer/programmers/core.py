@@ -38,6 +38,8 @@ def setup_logging(log_dir=None):
 
 
 def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
+    logger = logging.getLogger(__name__)
+    
     if baudrate is None or line_ending is None:
         from stm32_programmer.utils.uart_settings import UARTSettings
 
@@ -68,7 +70,6 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
         serial_port.rts = False
 
         if serial_port.is_open:
-            logger = logging.getLogger(__name__)
             logger.info(
                 f"[UART] подключено к {port_name} (baud={baudrate}, line_ending={line_ending}, timeout={port_timeout})"
             )
@@ -620,18 +621,22 @@ def get_status_from_uart(programmer, timeout=5.0):
     return None
 
 
-def validate_status(status_dict, expected_values, ignore_fields=None):
+def validate_status(status_dict, expected_values, ignore_fields=None, voltage_checks=None):
     logger = logging.getLogger(__name__)
     errors = []
     warnings = []
 
     if ignore_fields is None:
         ignore_fields = []
+    
+    if voltage_checks is None:
+        voltage_checks = {}
 
     logger.debug(f"начало валидации статуса")
     logger.debug(f"проверяется {len(expected_values)} параметров")
     logger.debug(f"игнорируется {len(ignore_fields)} полей")
     logger.debug(f"в статусе найдено {len(status_dict)} параметров")
+    logger.debug(f"проверяется {len(voltage_checks)} напряжений")
 
     for key, expected_value in expected_values.items():
         if key in ignore_fields:
@@ -655,6 +660,41 @@ def validate_status(status_dict, expected_values, ignore_fields=None):
                 logger.debug(
                     f"  {get_icon_emoji_fallback('check')} параметр '{key}': '{actual_str}' совпадает с ожидаемым"
                 )
+
+
+    for voltage_key, voltage_range in voltage_checks.items():
+        if voltage_key in ignore_fields:
+            logger.debug(f"напряжение '{voltage_key}' игнорируется")
+            continue
+        
+        actual_voltage = status_dict.get(voltage_key)
+        
+        if actual_voltage is None:
+            error_msg = f"Напряжение '{voltage_key}' не найдено в ответе"
+            logger.error(f"  {error_msg}")
+            errors.append(error_msg)
+        else:
+            try:
+                voltage_value = float(actual_voltage)
+                min_value = voltage_range.get("min")
+                max_value = voltage_range.get("max")
+                
+                if min_value is not None and voltage_value < min_value:
+                    error_msg = f"Напряжение '{voltage_key}': значение {voltage_value} ниже минимального {min_value}"
+                    logger.error(f"  {error_msg}")
+                    errors.append(error_msg)
+                elif max_value is not None and voltage_value > max_value:
+                    error_msg = f"Напряжение '{voltage_key}': значение {voltage_value} выше максимального {max_value}"
+                    logger.error(f"  {error_msg}")
+                    errors.append(error_msg)
+                else:
+                    logger.debug(
+                        f"  {get_icon_emoji_fallback('check')} напряжение '{voltage_key}': {voltage_value} в пределах [{min_value}, {max_value}]"
+                    )
+            except (ValueError, TypeError) as e:
+                error_msg = f"Напряжение '{voltage_key}': не удалось преобразовать значение '{actual_voltage}' в число: {e}"
+                logger.error(f"  {error_msg}")
+                errors.append(error_msg)
 
     is_valid = len(errors) == 0
     logger.debug(
@@ -741,6 +781,8 @@ def run_test_plan(
         wait_time = step.get("wait_time", 0)
         description = step.get("description", "")
         validation = step.get("validation")
+        check_na_error = step.get("check_na_error", False)
+        na_error_message = step.get("na_error_message", "Ошибка на линии PMBUS")
 
         if not command:
             logger.warning(f"Шаг '{step_name}': команда пустая после удаления пробелов")
@@ -793,6 +835,7 @@ def run_test_plan(
                 retry_delays = [0.1, 0.2, 0.3, 0.5, 1.0]
                 success = False
                 actual_response = None
+                final_actual_response = None
 
                 for attempt in range(max_retries):
                     logger.info(
@@ -834,6 +877,7 @@ def run_test_plan(
 
                         if success:
                             logger.info(f"успех на попытке {attempt + 1}!")
+                            final_actual_response = expected_response
                             break
                         else:
                             logger.warning(f"не получен ответ на попытке {attempt + 1}")
@@ -876,8 +920,18 @@ def run_test_plan(
                                         f"дополнительный ответ (hex): {buffer.hex()}"
                                     )
 
+                                    
+                                    if check_na_error and ("Na" in actual_response or "na" in actual_response.lower()):
+                                        error_msg = f"{na_error_message}: получен ответ '{actual_response}'"
+                                        logger.error(error_msg)
+                                        
+                                        success = False
+                                        final_actual_response = actual_response
+                                        break
+
                                     if actual_response == expected_response:
                                         success = True
+                                        final_actual_response = actual_response
                                         logger.info(
                                             "дополнительный ответ совпадает с ожидаемым!"
                                         )
@@ -899,6 +953,22 @@ def run_test_plan(
                 )
                 logger.info("=" * 80)
 
+                
+                response_to_check = final_actual_response if success else actual_response
+                if check_na_error and response_to_check:
+                    if "Na" in response_to_check or "na" in response_to_check.lower():
+                        error_msg = f"{na_error_message}: получен ответ '{response_to_check}'"
+                        logger.error(error_msg)
+                        test_errors.append(error_msg)
+                        all_tests_passed = False
+                        if status_callback:
+                            status_callback(error_msg)
+                        if progress_callback:
+                            progress_callback(f"<<- {response_to_check} (ОШИБКА: Na)")
+                        continue
+                    else:
+                        logger.info(f"Проверка на Na пройдена: ответ '{response_to_check}' не содержит Na")
+
                 if not success:
                     if actual_response:
                         error_msg = f"Ошибка на шаге '{step_name}': ожидали '{expected_response}', получили '{actual_response}'"
@@ -913,7 +983,7 @@ def run_test_plan(
                     if progress_callback and actual_response:
                         progress_callback(f"<<- {actual_response}")
                     continue
-
+                
                 if progress_callback:
                     progress_callback(f"<<- {expected_response}")
             else:
@@ -939,6 +1009,7 @@ def run_test_plan(
         if command == "GET STATUS" and validation:
             expected_values = validation.get("expected_values", {})
             ignore_fields = validation.get("ignore_fields", [])
+            voltage_checks = validation.get("voltage_checks", {})
 
             logger.info("=" * 80)
             logger.info(f"НАЧАЛО ВАЛИДАЦИИ СТАТУСА: {step_name}")
@@ -1053,7 +1124,7 @@ def run_test_plan(
 
                 logger.info("начало валидации параметров...")
                 is_valid, errors, warnings = validate_status(
-                    status_dict, expected_values, ignore_fields
+                    status_dict, expected_values, ignore_fields, voltage_checks
                 )
 
                 logger.info(f"результат валидации на попытке {validation_attempt + 1}:")
@@ -1239,8 +1310,6 @@ def program_device(
 
         if status_callback:
             status_callback("Инициализация...")
-        if progress_callback:
-            progress_callback("Инициализация")
         if progress_percent_callback:
             progress_percent_callback(0)
 
@@ -1266,8 +1335,6 @@ def program_device(
 
             time.sleep(0.5)
 
-        if progress_callback:
-            progress_callback("->> SET EN_12V=ON")
         from stm32_programmer.utils.uart_settings import UARTSettings
 
         uart_settings = UARTSettings()
@@ -1276,22 +1343,50 @@ def program_device(
 
         max_retries = 3
         en_12v_success = False
+        
         for attempt in range(max_retries):
+            attempt_num = attempt + 1
+            
+            
+            import threading
+            animation_stop = threading.Event()
+            
+            def animate_dots():
+                dot_count = 0
+                while not animation_stop.is_set():
+                    if progress_callback:
+                        dots = "." * ((dot_count % 3) + 1) 
+                        progress_callback(f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}){dots}")
+                    dot_count += 1
+                    if animation_stop.wait(0.4):  
+                        break
+            
+            if progress_callback:
+                animation_thread = threading.Thread(target=animate_dots, daemon=True)
+                animation_thread.start()
+            
             if attempt > 0:
                 logger.info(
-                    f"Повторная попытка отправки EN_12V=ON (попытка {attempt + 1}/{max_retries})..."
+                    f"Повторная попытка отправки EN_12V=ON (попытка {attempt_num}/{max_retries})..."
                 )
                 time.sleep(0.5)
 
             en_12v_success = programmer.send_command_uart(
                 command, "EN_12V=ON".strip().encode("utf-8")
             )
+            
+            animation_stop.set()  
+            time.sleep(0.1)  
+            
             if en_12v_success:
-                logger.info(f"EN_12V=ON успешно отправлена (попытка {attempt + 1})")
+                if progress_callback:
+                    
+                    progress_callback(f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}) - успешно")
+                logger.info(f"EN_12V=ON успешно отправлена (попытка {attempt_num})")
                 break
             else:
                 logger.warning(
-                    f"EN_12V=ON не получила ответ (попытка {attempt + 1}/{max_retries})"
+                    f"EN_12V=ON не получила ответ (попытка {attempt_num}/{max_retries})"
                 )
 
         if not en_12v_success:
@@ -1359,8 +1454,6 @@ def program_device(
             base_progress = mode_idx * mode_progress_range
             if status_callback:
                 status_callback(f"Переключение в режим {target_mode}...")
-            if progress_callback:
-                progress_callback(f"Переключение режима: {target_mode}")
 
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 2)
@@ -1847,8 +1940,6 @@ def program_device(
                         status_callback(
                             f"Проверка переключения режима {target_mode}..."
                         )
-                    if progress_callback:
-                        progress_callback("Проверка переключения")
                     if programming_progress_callback:
                         programming_progress_callback(base_progress + 5)
                     elif progress_percent_callback:
@@ -1894,8 +1985,6 @@ def program_device(
                         status_callback(
                             f"Стабилизация после переключения в режим {target_mode}..."
                         )
-                    if progress_callback:
-                        progress_callback("Стабилизация")
                     if programming_progress_callback:
                         programming_progress_callback(base_progress + 8)
                     elif progress_percent_callback:
@@ -1963,8 +2052,6 @@ def program_device(
 
             if status_callback:
                 status_callback(f"Загрузка прошивки для режима {target_mode}...")
-            if progress_callback:
-                progress_callback(f"Загрузка прошивки: {target_mode}")
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 15)
             elif progress_percent_callback:
@@ -1988,8 +2075,6 @@ def program_device(
 
             if status_callback:
                 status_callback(f"Запись {target_mode} прошивки...")
-            if progress_callback:
-                progress_callback(f"Запись прошивки: {target_mode}")
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 20)
             elif progress_percent_callback:
@@ -2032,7 +2117,6 @@ def program_device(
             if status_callback:
                 status_callback(f"Перезагрузка питания после записи {target_mode}...")
             if progress_callback:
-                progress_callback("Перезагрузка питания")
                 progress_callback("->> SET EN_12V=OFF")
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 65)
@@ -2045,20 +2129,20 @@ def program_device(
             line_ending_bytes = uart_settings.get_line_ending_bytes()
 
             command_off = "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
-            programmer.send_command_uart(
+            response_received = programmer.send_command_uart(
                 command_off, "EN_12V=OFF".strip().encode("utf-8")
             )
-            if progress_callback:
+            if response_received and progress_callback:
                 progress_callback("<<- EN_12V=OFF")
             time.sleep(1)
 
             if progress_callback:
                 progress_callback("->> SET EN_12V=ON")
             command_on = "SET EN_12V=ON".strip().encode("utf-8") + line_ending_bytes
-            programmer.send_command_uart(
+            response_received = programmer.send_command_uart(
                 command_on, "EN_12V=ON".strip().encode("utf-8")
             )
-            if progress_callback:
+            if response_received and progress_callback:
                 progress_callback("<<- EN_12V=ON")
             if programming_progress_callback:
                 programming_progress_callback(base_progress + 70)
@@ -2091,8 +2175,6 @@ def program_device(
             if target_mode == "LV":
                 if status_callback:
                     status_callback("Переподключение устройства после записи LV...")
-                if progress_callback:
-                    progress_callback("Переподключение устройства")
                 if programming_progress_callback:
                     programming_progress_callback(base_progress + 75)
                 elif progress_percent_callback:
@@ -2311,8 +2393,6 @@ def program_device(
                         status_callback(
                             "Выключение питания (финальное, гарантированно)..."
                         )
-                    if progress_callback:
-                        progress_callback("->> SET EN_12V=OFF")
                     from stm32_programmer.utils.uart_settings import UARTSettings
 
                     uart_settings = UARTSettings()
@@ -2320,13 +2400,68 @@ def program_device(
                     command_off = (
                         "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
                     )
+                    
                     try:
-                        programmer.send_command_uart(
-                            command_off, "EN_12V=OFF".strip().encode("utf-8")
-                        )
-                        if progress_callback:
-                            progress_callback("<<- EN_12V=OFF")
-                        logger.info("Питание выключено в блоке finally")
+                        max_retries = 3
+                        en_12v_off_success = False
+                        
+                        for attempt in range(max_retries):
+                            attempt_num = attempt + 1
+                            
+                            
+                            import threading
+                            animation_stop = threading.Event()
+                            
+                            def animate_dots():
+                                dot_count = 0
+                                while not animation_stop.is_set():
+                                    if progress_callback:
+                                        dots = "." * ((dot_count % 3) + 1) 
+                                        progress_callback(f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}){dots}")
+                                    dot_count += 1
+                                    if animation_stop.wait(0.4): 
+                                        break
+                            
+                            if progress_callback:
+                                animation_thread = threading.Thread(target=animate_dots, daemon=True)
+                                animation_thread.start()
+                            
+                            if attempt > 0:
+                                logger.info(
+                                    f"Повторная попытка отправки EN_12V=OFF (попытка {attempt_num}/{max_retries})..."
+                                )
+                                time.sleep(0.5)
+                            
+                            try:
+                                response_received = programmer.send_command_uart(
+                                    command_off, "EN_12V=OFF".strip().encode("utf-8")
+                                )
+                                
+                                animation_stop.set()  
+                                time.sleep(0.1)  
+                                
+                                if response_received:
+                                    if progress_callback:
+                                        
+                                        progress_callback(f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}) - успешно")
+                                        progress_callback("<<- EN_12V=OFF")
+                                    logger.info(f"EN_12V=OFF успешно отправлена (попытка {attempt_num})")
+                                    en_12v_off_success = True
+                                    break
+                                else:
+                                    logger.warning(
+                                        f"EN_12V=OFF не получила ответ (попытка {attempt_num}/{max_retries})"
+                                    )
+                            except Exception as send_error:
+                                animation_stop.set()
+                                logger.warning(
+                                    f"Ошибка при отправке команды EN_12V=OFF (попытка {attempt_num}): {send_error}"
+                                )
+                                if attempt < max_retries - 1:
+                                    time.sleep(0.5)
+                        
+                        if not en_12v_off_success:
+                            logger.warning("Команда EN_12V=OFF отправлена, но ответ не получен после всех попыток")
                         time.sleep(0.5)
                     except Exception as send_error:
                         logger.warning(

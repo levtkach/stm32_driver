@@ -7,7 +7,7 @@ from PyQt5.QtCore import QSize, Qt
 ICONS_DIR = Path(__file__).parent.parent / "icons"
 
 
-THEMED_ICONS = {"refresh", "play", "stop", "cross", "document", "folder", "delete"}
+THEMED_ICONS = {"refresh", "play", "stop", "cross", "document", "folder", "delete", "copy"}
 
 
 def get_icon_path(icon_name, extension="png", theme=None):
@@ -77,5 +77,6 @@ def get_icon_emoji_fallback(icon_name):
         "sun": "☀",
         "moon": "☾",
         "document": "📄",
+        "copy": "📋",
     }
     return emoji_map.get(icon_name, "")
