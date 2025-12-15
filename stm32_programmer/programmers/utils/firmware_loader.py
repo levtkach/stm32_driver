@@ -93,4 +93,3 @@ def _parse_intel_hex(file_path):
         image[address - min_address] = value
 
     return min_address, bytes(image)
-

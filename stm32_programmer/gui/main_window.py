@@ -70,27 +70,125 @@ class ProgrammingThread(QThread):
                 return
             stop_check = lambda: self._stop_requested
 
-            success, message = program_device(
-                lv_firmware_path=self.lv_path,
-                hv_firmware_path=self.hv_path,
-                progress_callback=self.progress_updated.emit,
-                status_callback=self.status_updated.emit,
-                progress_percent_callback=self.progress_percent_updated.emit,
-                programming_progress_callback=self.programming_progress_updated.emit,
-                testing_progress_callback=self.testing_progress_updated.emit,
-                stop_check_callback=stop_check,
-                uart_port=self.uart_port,
-                device_index=self.device_index,
-            )
-            if self._stop_requested:
-                self.finished.emit(False, "Остановлено пользователем")
+            try:
+                success, message = program_device(
+                    lv_firmware_path=self.lv_path,
+                    hv_firmware_path=self.hv_path,
+                    progress_callback=self.progress_updated.emit,
+                    status_callback=self.status_updated.emit,
+                    progress_percent_callback=self.progress_percent_updated.emit,
+                    programming_progress_callback=self.programming_progress_updated.emit,
+                    testing_progress_callback=self.testing_progress_updated.emit,
+                    stop_check_callback=stop_check,
+                    uart_port=self.uart_port,
+                    device_index=self.device_index,
+                )
+
+                if self._stop_requested:
+                    self.finished.emit(False, "Остановлено пользователем")
+                else:
+                    self.finished.emit(success, message)
+            except Exception as e:
+
+                error_msg = str(e)
+                if (
+                    "I/O operation on closed file" in error_msg
+                    or "operation on closed" in error_msg.lower()
+                ):
+
+                    try:
+                        logger.debug(
+                            f"Порт закрыт после завершения program_device: {e}"
+                        )
+                    except:
+                        pass
+
+                    raise RuntimeError(
+                        f"Критическая ошибка: I/O operation on closed file"
+                    )
+                else:
+
+                    raise
+        except RuntimeError as e:
+            error_msg = str(e)
+            import traceback
+
+            try:
+                logger.error(f"RuntimeError в ProgrammingThread.run: {error_msg}")
+                logger.error(f"Трассировка RuntimeError: {traceback.format_exc()}")
+            except Exception as log_error:
+
+                try:
+                    print(f"ОШИБКА: Не удалось залогировать RuntimeError: {log_error}")
+                    print(f"Исходный RuntimeError: {error_msg}")
+                    print(f"Трассировка: {traceback.format_exc()}")
+                except:
+                    pass
+
+            if "I/O operation on closed file" in error_msg:
+                if self._stop_requested:
+                    self.finished.emit(False, "Остановлено пользователем")
+                else:
+                    try:
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file в ProgrammingThread"
+                        )
+                    except:
+                        pass
+                    self.finished.emit(
+                        False, f"Критическая ошибка: I/O operation on closed file"
+                    )
             else:
-                self.finished.emit(success, message)
+                if self._stop_requested:
+                    self.finished.emit(False, "Остановлено пользователем")
+                else:
+                    try:
+                        logger.error(
+                            f"RuntimeError (не I/O operation on closed file): {e}"
+                        )
+                    except:
+                        pass
+                    self.finished.emit(False, f"Критическая ошибка: {e}")
         except Exception as e:
+            import traceback
+
+            error_msg = str(e)
+            try:
+                logger.error(f"Exception в ProgrammingThread.run: {error_msg}")
+                logger.error(f"Тип исключения: {type(e).__name__}")
+                logger.error(f"Трассировка Exception: {traceback.format_exc()}")
+            except Exception as log_error:
+
+                try:
+                    print(f"ОШИБКА: Не удалось залогировать исключение: {log_error}")
+                    print(f"Исходное исключение: {error_msg}")
+                    print(f"Тип исключения: {type(e).__name__}")
+                    print(f"Трассировка: {traceback.format_exc()}")
+                except:
+                    pass
+
             if self._stop_requested:
                 self.finished.emit(False, "Остановлено пользователем")
             else:
-                self.finished.emit(False, f"Критическая ошибка: {e}")
+                if (
+                    "I/O operation on closed file" in error_msg
+                    or "operation on closed" in error_msg.lower()
+                ):
+                    try:
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file в ProgrammingThread (Exception)"
+                        )
+                    except:
+                        pass
+                    self.finished.emit(
+                        False, f"Критическая ошибка: I/O operation on closed file"
+                    )
+                else:
+                    try:
+                        logger.error(f"Неожиданная ошибка в ProgrammingThread: {e}")
+                    except:
+                        pass
+                    self.finished.emit(False, f"Критическая ошибка: {e}")
 
 
 class FirmwareLoadButton(QPushButton):
@@ -180,16 +278,15 @@ class STM32ProgrammerGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("STM32 Programmer")
-        
-      
+
         self.settings = QSettings("STM32Programmer", "FirmwarePaths")
         geometry = self.settings.value("window_geometry")
         if geometry:
             self.restoreGeometry(geometry)
         else:
-      
+
             self.setGeometry(200, 200, 800, 750)
-        
+
         self.setMinimumSize(700, 600)
 
         self.lv_file_path = ""
@@ -208,7 +305,7 @@ class STM32ProgrammerGUI(QWidget):
         self.init_sounds()
         logger, log_file = setup_logging()
         self.log_file = log_file
-        self.last_updating_line_key = None 
+        self.last_updating_line_key = None
         self.stopping_animation_timer = QTimer()
         self.stopping_animation_timer.timeout.connect(self._update_stopping_animation)
         self.stopping_dot_count = 0
@@ -302,75 +399,61 @@ class STM32ProgrammerGUI(QWidget):
         is_light_theme = self.current_theme == "light"
         command_color = "#38a169" if is_light_theme else "#50fa7b"
         response_color = "#3182ce" if is_light_theme else "#8be9fd"
-        
-        
+
         message = html.escape(message)
-        
-        
+
         command_patterns = [
-            (r'GET STATUS', command_color),
-            (r'SWICH_MODE=\w+', command_color),  
-            (r'SWICH_PROFILE=\w+', command_color),
-            (r'SET LED\d+=\w+', command_color),
-            (r'GET \w+', command_color),
+            (r"GET STATUS", command_color),
+            (r"SWICH_MODE=\w+", command_color),
+            (r"SWICH_PROFILE=\w+", command_color),
+            (r"SET LED\d+=\w+", command_color),
+            (r"GET \w+", command_color),
         ]
-        
-        
+
         response_patterns = [
-            (r'LED\d+=(ON|OFF|RED|GREEN|BLUE)', response_color),
-            (r'<<- (.*?)(?=\n|$)', response_color), 
-            (r'->> (.*?)(?=\n|$)', command_color),  
+            (r"LED\d+=(ON|OFF|RED|GREEN|BLUE)", response_color),
+            (r"<<- (.*?)(?=\n|$)", response_color),
+            (r"->> (.*?)(?=\n|$)", command_color),
         ]
-        
-        
+
         message = re.sub(
-            r'->> ([^\n]+)',
+            r"->> ([^\n]+)",
             f'->> <span style="color:{command_color}">\\1</span>',
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
-        
-        
+
         message = re.sub(
-            r'<<- ([^\n]+)',
+            r"<<- ([^\n]+)",
             f'<<- <span style="color:{response_color}">\\1</span>',
             message,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
-        
-        
+
         for pattern, color in command_patterns:
-        
+
             def replace_command(match):
                 text = match.group(0)
-        
+
                 if '<span style="color:' not in text:
                     return f'<span style="color:{color}">{text}</span>'
                 return text
-            message = re.sub(
-                pattern,
-                replace_command,
-                message,
-                flags=re.IGNORECASE
-            )
-        
-        
+
+            message = re.sub(pattern, replace_command, message, flags=re.IGNORECASE)
+
         for pattern, color in response_patterns:
-            if pattern.startswith('<<-') or pattern.startswith('->>'):
-                continue  
+            if pattern.startswith("<<-") or pattern.startswith("->>"):
+                continue
+
             def replace_response(match):
                 text = match.group(0)
-                
+
                 if '<span style="color:' not in text:
                     return f'<span style="color:{color}">{text}</span>'
                 return text
-            message = re.sub(
-                pattern,
-                replace_response,
-                message,
-                flags=re.IGNORECASE
-            )
-        
+
+            message = re.sub(pattern, replace_response, message, flags=re.IGNORECASE)
+
         return message
 
     def show_message_box(
@@ -378,16 +461,24 @@ class STM32ProgrammerGUI(QWidget):
     ):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle(title)
-        
-        
+
         if icon_type == QMessageBox.Critical:
             colored_message = self._colorize_error_message(message)
             msg_box.setTextFormat(Qt.RichText)
             msg_box.setText(colored_message)
         else:
             msg_box.setText(message)
-        
+
         msg_box.setIcon(icon_type)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_width = screen.availableGeometry().width()
+
+            text_length = len(message)
+            optimal_width = min(max(text_length * 8, 500), int(screen_width * 0.8))
+            msg_box.setMinimumWidth(optimal_width)
+            msg_box.setMaximumWidth(int(screen_width * 0.9))
         if icon_type == QMessageBox.Information:
             self.play_sound("success")
         elif icon_type == QMessageBox.Warning:
@@ -413,40 +504,40 @@ class STM32ProgrammerGUI(QWidget):
                 ok_button = msg_box.button(QMessageBox.Ok)
                 if ok_button:
                     ok_button.setText("ОК")
-            
-            
+
             if icon_type == QMessageBox.Critical:
-            
+
                 ok_button = msg_box.button(QMessageBox.Ok)
                 ok_height = ok_button.height() if ok_button else 32
-                
+
                 copy_button = QPushButton()
                 copy_button.setToolTip("Копировать текст ошибки")
-                copy_button.setFixedHeight(ok_height)  
-                copy_button.setMinimumWidth(ok_height) 
+                copy_button.setFixedHeight(ok_height)
+                copy_button.setMinimumWidth(ok_height)
                 copy_button.setAutoDefault(False)
                 copy_button.setDefault(False)
                 copy_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-                
-                
-                copy_icon = get_qt_icon("copy", int(ok_height * 0.6), theme=self.current_theme)
+
+                copy_icon = get_qt_icon(
+                    "copy", int(ok_height * 0.6), theme=self.current_theme
+                )
                 if not copy_icon.isNull():
                     copy_button.setIcon(copy_icon)
-                    copy_button.setIconSize(QSize(int(ok_height * 0.6), int(ok_height * 0.6)))
+                    copy_button.setIconSize(
+                        QSize(int(ok_height * 0.6), int(ok_height * 0.6))
+                    )
                 else:
                     copy_button.setText(get_icon_emoji_fallback("copy"))
-                
-                
+
                 def copy_without_close():
                     clipboard = QApplication.clipboard()
                     clipboard.setText(message)
                     msg_box.setResult(QMessageBox.NoButton)
-                
+
                 copy_button.clicked.connect(copy_without_close)
-                
-                
+
                 msg_box.addButton(copy_button, QMessageBox.ActionRole)
-            
+
             return msg_box.exec_()
 
     def init_ui(self):
@@ -806,7 +897,7 @@ class STM32ProgrammerGUI(QWidget):
 
     def closeEvent(self, event):
         logger.info("Сохранение состояния при закрытии приложения...")
-        
+
         self.settings.setValue("window_geometry", self.saveGeometry())
         self._save_firmware_paths()
         self._save_last_device_and_port()
@@ -826,7 +917,22 @@ class STM32ProgrammerGUI(QWidget):
 
             if self.programmer.selected_uart:
                 try:
-                    if self.programmer.selected_uart.is_open:
+
+                    is_open = False
+                    try:
+                        is_open = self.programmer.selected_uart.is_open
+                    except (ValueError, OSError, IOError) as e:
+                        error_msg = str(e).lower()
+                        if "closed" in error_msg or "operation on closed" in error_msg:
+                            logger.debug(f"Порт закрыт при проверке в closeEvent: {e}")
+                            is_open = False
+                        else:
+                            logger.warning(
+                                f"Ошибка при проверке is_open в closeEvent: {e}"
+                            )
+                            is_open = False
+
+                    if is_open:
                         logger.info("Выключение питания при закрытии приложения...")
                         from stm32_programmer.utils.uart_settings import UARTSettings
 
@@ -839,14 +945,44 @@ class STM32ProgrammerGUI(QWidget):
                             self.programmer.send_command_uart(
                                 command_off, "EN_12V=OFF".strip().encode("utf-8")
                             )
-                        except:
+                        except RuntimeError as e:
+                            if "I/O operation on closed file" in str(e):
+                                logger.warning(
+                                    f"Порт закрыт при отправке EN_12V=OFF в closeEvent: {e}"
+                                )
+                            else:
 
-                            try:
-                                self.programmer.selected_uart.write(command_off)
-                                self.programmer.selected_uart.flush()
-                                logger.info("Команда EN_12V=OFF отправлена напрямую")
-                            except:
-                                pass
+                                try:
+                                    if (
+                                        self.programmer.selected_uart
+                                        and self.programmer.selected_uart.is_open
+                                    ):
+                                        self.programmer.selected_uart.write(command_off)
+                                        self.programmer.selected_uart.flush()
+                                        logger.info(
+                                            "Команда EN_12V=OFF отправлена напрямую"
+                                        )
+                                except (ValueError, OSError, IOError) as e2:
+                                    error_msg2 = str(e2).lower()
+                                    if (
+                                        "closed" in error_msg2
+                                        or "operation on closed" in error_msg2
+                                    ):
+                                        logger.debug(
+                                            f"Порт закрыт при прямой отправке в closeEvent: {e2}"
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"Ошибка при прямой отправке в closeEvent: {e2}"
+                                        )
+                                except Exception as e2:
+                                    logger.warning(
+                                        f"Неожиданная ошибка при прямой отправке в closeEvent: {e2}"
+                                    )
+                        except Exception as e:
+                            logger.warning(
+                                f"Ошибка при отправке EN_12V=OFF в closeEvent: {e}"
+                            )
                         import time
 
                         time.sleep(0.5)
@@ -1395,7 +1531,7 @@ class STM32ProgrammerGUI(QWidget):
             color = "#dd6b20" if is_light_theme else "#ffaa00"
             font_weight = "normal"
         elif msg_type == "main_stage":
-            
+
             color = "#d69e2e" if is_light_theme else "#ffd700"
             font_weight = "bold"
         elif msg_type == "command":
@@ -1408,31 +1544,32 @@ class STM32ProgrammerGUI(QWidget):
             color = "#1a202c" if is_light_theme else "#e0e0e0"
             font_weight = "normal"
 
-        formatted_message = f'<span style="color:{color}; font-weight:{font_weight}">{message}</span>'
-        
-        
+        formatted_message = (
+            f'<span style="color:{color}; font-weight:{font_weight}">{message}</span>'
+        )
+
         if update_key is not None:
             if self.last_updating_line_key == update_key:
-        
+
                 cursor = self.console.textCursor()
                 cursor.movePosition(cursor.End)
-        
+
                 cursor.movePosition(cursor.StartOfBlock, cursor.KeepAnchor)
-        
+
                 if cursor.hasSelection():
                     cursor.removeSelectedText()
-        
+
                 cursor.insertHtml(formatted_message)
                 self.console.setTextCursor(cursor)
             else:
-        
+
                 self.console.append(formatted_message)
                 self.last_updating_line_key = update_key
         else:
-        
+
             self.console.append(formatted_message)
             self.last_updating_line_key = None
-        
+
         self.console.moveCursor(self.console.textCursor().End)
 
     def toggle_programming(self):
@@ -1442,15 +1579,15 @@ class STM32ProgrammerGUI(QWidget):
             self.start_programming()
 
     def _update_stopping_animation(self):
-        
+
         if not self.is_stopping:
             self.stopping_animation_timer.stop()
             return
-        
+
         self.stopping_dot_count = (self.stopping_dot_count % 3) + 1
         dots = "." * self.stopping_dot_count
         self.current_process_label.setText(f"Остановка{dots}")
-    
+
     def stop_programming(self):
         if not self.is_programming or not self.programming_thread:
             return
@@ -1463,8 +1600,8 @@ class STM32ProgrammerGUI(QWidget):
         )
         self.current_process_label.show()
         self.current_process_label.update()
-        
-        self.stopping_animation_timer.start(400) 
+
+        self.stopping_animation_timer.start(400)
         QApplication.processEvents()
         QApplication.processEvents()
         if self.programming_thread:
@@ -1596,7 +1733,7 @@ class STM32ProgrammerGUI(QWidget):
 
     def on_progress_updated(self, message):
         if self.is_stopping:
-            
+
             if not self.stopping_animation_timer.isActive():
                 self.stopping_animation_timer.start(400)
             color = self.get_process_label_color("stopping")
@@ -1604,16 +1741,16 @@ class STM32ProgrammerGUI(QWidget):
                 f"color: {color}; font-weight: 500; padding: 4px;"
             )
             return
-        
-        
+
         import re
+
         update_key = None
         if "->>" in message and "(попытка" in message:
-        
-            match = re.match(r'(.*?)\s*\(попытка\s+\d+/\d+\)', message)
+
+            match = re.match(r"(.*?)\s*\(попытка\s+\d+/\d+\)", message)
             if match:
                 update_key = match.group(1).strip()
-        
+
         if message.startswith("->>"):
             self.log(message, msg_type="command", update_key=update_key)
         elif message.startswith("<<"):
@@ -1622,7 +1759,7 @@ class STM32ProgrammerGUI(QWidget):
             self.log(message, msg_type="info", update_key=update_key)
 
     def on_status_updated(self, message):
-        
+
         main_stages = [
             "Начало программирования",
             "Инициализация",
@@ -1636,14 +1773,13 @@ class STM32ProgrammerGUI(QWidget):
             "Выключение питания",
             "Переподключение устройства",
         ]
-        
+
         is_main_stage = any(stage in message for stage in main_stages)
-        
+
         msg_type = (
             "error"
             if "ошибка" in message.lower() or "error" in message.lower()
-            else "main_stage" if is_main_stage
-            else "info"
+            else "main_stage" if is_main_stage else "info"
         )
         self.log(message, msg_type=msg_type)
         message_upper = message.upper()
@@ -1716,7 +1852,7 @@ class STM32ProgrammerGUI(QWidget):
     def on_programming_finished(self, success, message):
         self.is_programming = False
         self.is_stopping = False
-        
+
         self.stopping_animation_timer.stop()
         self.update_buttons_state()
         self.programming_progress_bar.hide()
@@ -1764,6 +1900,14 @@ class STM32ProgrammerGUI(QWidget):
                 )
 
                 if result == QMessageBox.Ok:
+
+                    try:
+                        if self.programmer and self.programmer.selected_uart:
+                            self.programmer.close_uart()
+                    except Exception as e:
+                        logger.debug(
+                            f"Ошибка при закрытии порта в on_programming_finished: {e}"
+                        )
                     self._turn_off_led()
             else:
 
@@ -1808,28 +1952,85 @@ class STM32ProgrammerGUI(QWidget):
                 )
 
                 if result == QMessageBox.Ok:
+
+                    try:
+                        if self.programmer and self.programmer.selected_uart:
+                            self.programmer.close_uart()
+                    except Exception as e:
+                        logger.debug(
+                            f"Ошибка при закрытии порта в on_programming_finished: {e}"
+                        )
                     self._turn_off_led()
 
-        if self.current_port:
-            try:
-                from stm32_programmer.programmers.base import reset_uart_system_level
+        try:
+            if self.programmer and self.programmer.selected_uart:
+                try:
 
-                self.log("Системная перезагрузка UART порта...", msg_type="info")
-                reset_uart_system_level(self.current_port)
-                self.log("UART порт перезагружен на системном уровне", msg_type="info")
-            except Exception as e:
-                logger.warning(f"Ошибка при системной перезагрузке порта: {e}")
+                    if self.programmer.selected_uart.is_open:
+                        self.programmer.close_uart()
+                    else:
+
+                        self.programmer.selected_uart = None
+                except (
+                    ValueError,
+                    OSError,
+                    IOError,
+                    RuntimeError,
+                    AttributeError,
+                ) as e:
+                    error_msg = str(e).lower()
+                    if (
+                        "closed" in error_msg
+                        or "operation on closed" in error_msg
+                        or "attribute" in error_msg
+                    ):
+
+                        logger.debug(f"Порт уже закрыт в on_programming_finished: {e}")
+                        self.programmer.selected_uart = None
+                    else:
+
+                        try:
+                            self.programmer.close_uart()
+                        except:
+                            self.programmer.selected_uart = None
+        except Exception as e:
+            logger.debug(f"Ошибка при закрытии порта в on_programming_finished: {e}")
 
         self.current_device_id = None
         self.current_port = None
 
     def _turn_off_led(self):
         try:
-            if (
-                self.programmer
-                and self.programmer.selected_uart
-                and self.programmer.selected_uart.is_open
-            ):
+
+            if not self.programmer:
+                return
+
+            if not self.programmer.selected_uart:
+                return
+
+            is_open = False
+            try:
+                is_open = self.programmer.selected_uart.is_open
+            except (ValueError, OSError, IOError, RuntimeError, AttributeError) as e:
+                error_msg = str(e).lower()
+                if (
+                    "closed" in error_msg
+                    or "operation on closed" in error_msg
+                    or "attribute" in error_msg
+                ):
+                    logger.debug(
+                        f"Порт закрыт или недоступен при проверке в _turn_off_led: {e}"
+                    )
+
+                    try:
+                        self.programmer.selected_uart = None
+                    except:
+                        pass
+                    return
+
+                raise
+
+            if is_open:
                 from stm32_programmer.utils.uart_settings import UARTSettings
 
                 uart_settings = UARTSettings()
@@ -1839,13 +2040,26 @@ class STM32ProgrammerGUI(QWidget):
                 led_off_command = (
                     "SET LED4=OFF".strip().encode("utf-8") + line_ending_bytes
                 )
-                success = self.programmer.send_command_uart(
-                    led_off_command, "LED4=OFF".strip().encode("utf-8")
-                )
-                if success:
-                    self.log("<<- LED4=OFF", msg_type="response")
-                else:
-                    self.log("Не получен ответ на команду LED4=OFF", msg_type="warning")
+                try:
+                    success = self.programmer.send_command_uart(
+                        led_off_command, "LED4=OFF".strip().encode("utf-8")
+                    )
+                    if success:
+                        self.log("<<- LED4=OFF", msg_type="response")
+                    else:
+                        self.log(
+                            "Не получен ответ на команду LED4=OFF", msg_type="warning"
+                        )
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    if "I/O operation on closed file" in error_msg:
+                        logger.warning(f"Порт закрыт во время отправки LED4=OFF: {e}")
+                        self.log(
+                            "Порт закрыт, команда LED4=OFF не отправлена",
+                            msg_type="warning",
+                        )
+                    else:
+                        raise
         except Exception as e:
             self.log(f"Ошибка при выключении светодиода: {e}", msg_type="error")
 

@@ -29,4 +29,3 @@ def setup_logging(log_dir=None):
     logger = logging.getLogger(__name__)
     logger.warning(f"Логи записываются в файл: {log_filename}")
     return logger, str(log_filename)
-

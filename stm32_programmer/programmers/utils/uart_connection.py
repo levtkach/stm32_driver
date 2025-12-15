@@ -214,4 +214,3 @@ def detect_serial_port(selected_device):
         return None
 
     return None
-

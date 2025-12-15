@@ -39,7 +39,7 @@ def setup_logging(log_dir=None):
 
 def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
     logger = logging.getLogger(__name__)
-    
+
     if baudrate is None or line_ending is None:
         from stm32_programmer.utils.uart_settings import UARTSettings
 
@@ -49,7 +49,10 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
         if line_ending is None:
             line_ending = uart_settings.get_line_ending()
 
-    time.sleep(0.1)
+    if sys.platform == "win32":
+        time.sleep(0.2)
+    else:
+        time.sleep(0.1)
 
     try:
         port_timeout = 3.0 if sys.platform == "win32" else 3.0
@@ -69,7 +72,22 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
         serial_port.dtr = False
         serial_port.rts = False
 
-        if serial_port.is_open:
+        try:
+            is_open = serial_port.is_open
+        except (ValueError, OSError, IOError) as e:
+            error_msg = str(e).lower()
+            if "closed" in error_msg or "operation on closed" in error_msg:
+                logger.error(f"Порт {port_name} закрыт сразу после создания: {e}")
+                try:
+                    serial_port.close()
+                except:
+                    pass
+                raise serial.SerialException(
+                    f"Порт {port_name} закрыт сразу после создания: {e}"
+                )
+            raise
+
+        if is_open:
             logger.info(
                 f"[UART] подключено к {port_name} (baud={baudrate}, line_ending={line_ending}, timeout={port_timeout})"
             )
@@ -77,12 +95,78 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
             time.sleep(0.2)
 
             try:
+                if not serial_port.is_open:
+                    logger.error(f"Порт {port_name} закрыт после паузы")
+                    try:
+                        serial_port.close()
+                    except:
+                        pass
+                    raise serial.SerialException(f"Порт {port_name} закрыт после паузы")
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.error(
+                        f"Порт {port_name} закрыт при проверке после паузы: {e}"
+                    )
+                    try:
+                        serial_port.close()
+                    except:
+                        pass
+                    raise serial.SerialException(
+                        f"Порт {port_name} закрыт при проверке после паузы: {e}"
+                    )
+                raise
+
+            try:
                 serial_port.reset_input_buffer()
                 serial_port.reset_output_buffer()
-            except:
-                pass
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.error(f"Порт {port_name} закрыт при очистке буферов: {e}")
+                    try:
+                        serial_port.close()
+                    except:
+                        pass
+                    raise serial.SerialException(
+                        f"Порт {port_name} закрыт при очистке буферов: {e}"
+                    )
+
+                logger.warning(f"Ошибка при очистке буферов порта {port_name}: {e}")
+            except Exception as e:
+                logger.warning(
+                    f"Неожиданная ошибка при очистке буферов порта {port_name}: {e}"
+                )
+
+            try:
+                if not serial_port.is_open:
+                    logger.error(f"Порт {port_name} закрыт перед возвратом")
+                    try:
+                        serial_port.close()
+                    except:
+                        pass
+                    raise serial.SerialException(
+                        f"Порт {port_name} закрыт перед возвратом"
+                    )
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.error(f"Порт {port_name} закрыт при финальной проверке: {e}")
+                    try:
+                        serial_port.close()
+                    except:
+                        pass
+                    raise serial.SerialException(
+                        f"Порт {port_name} закрыт при финальной проверке: {e}"
+                    )
+                raise
+
             return serial_port
         else:
+            try:
+                serial_port.close()
+            except:
+                pass
             raise serial.SerialException(f"Не удалось открыть {port_name}")
 
     except serial.SerialException as e:
@@ -92,9 +176,17 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
             or "permission denied" in error_msg
             or "busy" in error_msg
         ):
-            logger.warning(f"Порт {port_name} занят, ожидание освобождения...")
 
-            time.sleep(0.5)
+            if sys.platform == "win32":
+                wait_time = 1.0
+                logger.warning(
+                    f"Порт {port_name} занят на Windows, ожидание освобождения ({wait_time} сек)..."
+                )
+            else:
+                wait_time = 0.5
+                logger.warning(f"Порт {port_name} занят, ожидание освобождения...")
+
+            time.sleep(wait_time)
             try:
                 serial_port = serial.Serial(
                     port=port_name,
@@ -109,17 +201,117 @@ def connect_to_uart_port(port_name, baudrate=None, line_ending=None):
                 )
                 serial_port.dtr = False
                 serial_port.rts = False
-                if serial_port.is_open:
+
+                try:
+                    is_open = serial_port.is_open
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.error(
+                            f"Порт {port_name} закрыт сразу после повторной попытки: {e}"
+                        )
+                        try:
+                            serial_port.close()
+                        except:
+                            pass
+                        raise serial.SerialException(
+                            f"Порт {port_name} закрыт сразу после повторной попытки: {e}"
+                        )
+                    raise
+
+                if is_open:
                     logger.info(
                         f"[UART] подключено к {port_name} после повторной попытки"
                     )
                     time.sleep(0.2)
+
+                    try:
+                        if not serial_port.is_open:
+                            logger.error(
+                                f"Порт {port_name} закрыт после паузы (повторная попытка)"
+                            )
+                            try:
+                                serial_port.close()
+                            except:
+                                pass
+                            raise serial.SerialException(
+                                f"Порт {port_name} закрыт после паузы (повторная попытка)"
+                            )
+                    except (ValueError, OSError, IOError) as e:
+                        error_msg = str(e).lower()
+                        if "closed" in error_msg or "operation on closed" in error_msg:
+                            logger.error(
+                                f"Порт {port_name} закрыт при проверке после паузы (повторная попытка): {e}"
+                            )
+                            try:
+                                serial_port.close()
+                            except:
+                                pass
+                            raise serial.SerialException(
+                                f"Порт {port_name} закрыт при проверке после паузы (повторная попытка): {e}"
+                            )
+                        raise
+
                     try:
                         serial_port.reset_input_buffer()
                         serial_port.reset_output_buffer()
+                    except (ValueError, OSError, IOError) as e:
+                        error_msg = str(e).lower()
+                        if "closed" in error_msg or "operation on closed" in error_msg:
+                            logger.error(
+                                f"Порт {port_name} закрыт при очистке буферов (повторная попытка): {e}"
+                            )
+                            try:
+                                serial_port.close()
+                            except:
+                                pass
+                            raise serial.SerialException(
+                                f"Порт {port_name} закрыт при очистке буферов (повторная попытка): {e}"
+                            )
+                        logger.warning(
+                            f"Ошибка при очистке буферов порта {port_name} (повторная попытка): {e}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Неожиданная ошибка при очистке буферов порта {port_name} (повторная попытка): {e}"
+                        )
+
+                    try:
+                        if not serial_port.is_open:
+                            logger.error(
+                                f"Порт {port_name} закрыт перед возвратом (повторная попытка)"
+                            )
+                            try:
+                                serial_port.close()
+                            except:
+                                pass
+                            raise serial.SerialException(
+                                f"Порт {port_name} закрыт перед возвратом (повторная попытка)"
+                            )
+                    except (ValueError, OSError, IOError) as e:
+                        error_msg = str(e).lower()
+                        if "closed" in error_msg or "operation on closed" in error_msg:
+                            logger.error(
+                                f"Порт {port_name} закрыт при финальной проверке (повторная попытка): {e}"
+                            )
+                            try:
+                                serial_port.close()
+                            except:
+                                pass
+                            raise serial.SerialException(
+                                f"Порт {port_name} закрыт при финальной проверке (повторная попытка): {e}"
+                            )
+                        raise
+
+                    return serial_port
+                else:
+                    try:
+                        serial_port.close()
                     except:
                         pass
-                    return serial_port
+                    raise serial.SerialException(
+                        f"Не удалось открыть {port_name} после повторной попытки"
+                    )
             except Exception as e2:
                 raise serial.SerialException(
                     f"Ошибка подключения к {port_name} после повторной попытки: {e2}"
@@ -355,17 +547,54 @@ def check_current_mode(programmer, expected_mode, max_retries=3, retry_delay=0.5
         for query_cmd in query_commands:
             try:
                 programmer.selected_uart.reset_input_buffer()
-                programmer.selected_uart.write(query_cmd.encode("utf-8"))
-                programmer.selected_uart.flush()
+
+                try:
+                    uart_port = None
+                    if hasattr(programmer.selected_uart, "port"):
+                        uart_port = programmer.selected_uart.port
+                    elif programmer.selected:
+                        uart_port = detect_serial_port(programmer.selected)
+                    programmer._safe_uart_write(
+                        query_cmd.encode("utf-8"), max_retries=2, uart_port=uart_port
+                    )
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    if "I/O operation on closed file" in error_msg:
+                        logger.warning(
+                            f"Порт закрыт при отправке команды запроса режима: {e}"
+                        )
+                        raise
+                    raise
                 time.sleep(0.15)
 
                 buffer = b""
                 start_time = time.time()
                 while (time.time() - start_time) < 2.0:
-                    if programmer.selected_uart.in_waiting > 0:
-                        data = programmer.selected_uart.read(
-                            programmer.selected_uart.in_waiting
-                        )
+                    try:
+                        in_waiting = programmer.selected_uart.in_waiting
+                    except (
+                        ValueError,
+                        OSError,
+                        IOError,
+                        PermissionError,
+                        serial.SerialException,
+                    ) as e:
+                        error_msg = str(e).lower()
+                        if (
+                            "permission" in error_msg
+                            or "доступ" in error_msg
+                            or "access" in error_msg
+                            or "clearcommerror" in error_msg
+                        ):
+                            logger.error(
+                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при чтении (возможно, порт занят другим процессом): {e}"
+                            )
+                            raise RuntimeError(
+                                f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                            )
+                        break
+                    if in_waiting > 0:
+                        data = programmer.selected_uart.read(in_waiting)
                         if data:
                             buffer += data
                             if b"\n" in buffer or b"\r" in buffer:
@@ -526,10 +755,47 @@ def get_status_from_uart(programmer, timeout=5.0):
         try:
 
             try:
-                bytes_before = programmer.selected_uart.in_waiting
+                try:
+                    bytes_before = programmer.selected_uart.in_waiting
+                except (
+                    ValueError,
+                    OSError,
+                    IOError,
+                    PermissionError,
+                    serial.SerialException,
+                ) as e:
+                    error_msg = str(e).lower()
+                    if (
+                        "permission" in error_msg
+                        or "доступ" in error_msg
+                        or "access" in error_msg
+                        or "clearcommerror" in error_msg
+                    ):
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                        )
+                        raise RuntimeError(
+                            f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                        )
+                    raise
                 programmer.selected_uart.reset_input_buffer()
                 logger.info(f"очищен буфер uart, было байт: {bytes_before}")
+            except RuntimeError:
+                raise
             except Exception as e:
+                error_msg = str(e).lower()
+                if (
+                    "permission" in error_msg
+                    or "доступ" in error_msg
+                    or "access" in error_msg
+                    or "clearcommerror" in error_msg
+                ):
+                    logger.error(
+                        f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при очистке буфера (возможно, порт занят другим процессом): {e}"
+                    )
+                    raise RuntimeError(
+                        f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                    )
                 logger.warning(f"ошибка при очистке буфера: {e}")
 
             from stm32_programmer.utils.uart_settings import UARTSettings
@@ -540,8 +806,20 @@ def get_status_from_uart(programmer, timeout=5.0):
 
             logger.info(f"отправка команды GET STATUS (hex): {command.hex()}")
             start_send_time = time.time()
-            programmer.selected_uart.write(command)
-            programmer.selected_uart.flush()
+
+            try:
+                uart_port = None
+                if hasattr(programmer.selected_uart, "port"):
+                    uart_port = programmer.selected_uart.port
+                elif programmer.selected:
+                    uart_port = detect_serial_port(programmer.selected)
+                programmer._safe_uart_write(command, max_retries=2, uart_port=uart_port)
+            except RuntimeError as e:
+                error_msg = str(e)
+                if "I/O operation on closed file" in error_msg:
+                    logger.error(f"Порт закрыт при отправке команды GET STATUS: {e}")
+                    raise
+                raise
             send_duration = time.time() - start_send_time
             logger.info(f"команда отправлена за {send_duration:.4f} сек")
 
@@ -561,8 +839,32 @@ def get_status_from_uart(programmer, timeout=5.0):
                 read_attempts += 1
                 elapsed = time.time() - start_time
 
-                if programmer.selected_uart.in_waiting > 0:
-                    bytes_to_read = programmer.selected_uart.in_waiting
+                try:
+                    in_waiting = programmer.selected_uart.in_waiting
+                except (
+                    ValueError,
+                    OSError,
+                    IOError,
+                    PermissionError,
+                    serial.SerialException,
+                ) as e:
+                    error_msg = str(e).lower()
+                    if (
+                        "permission" in error_msg
+                        or "доступ" in error_msg
+                        or "access" in error_msg
+                        or "clearcommerror" in error_msg
+                    ):
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при чтении статуса (возможно, порт занят другим процессом): {e}"
+                        )
+                        raise RuntimeError(
+                            f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                        )
+                    raise
+
+                if in_waiting > 0:
+                    bytes_to_read = in_waiting
                     if read_attempts % 20 == 0:
                         logger.info(
                             f"попытка {read_attempts}: доступно {bytes_to_read} байт, прошло {elapsed:.3f} сек"
@@ -601,9 +903,35 @@ def get_status_from_uart(programmer, timeout=5.0):
             else:
                 logger.warning(f"не получен ответ на попытке {attempt + 1}, буфер пуст")
                 if programmer.selected_uart:
-                    logger.warning(
-                        f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
-                    )
+                    try:
+                        logger.warning(
+                            f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
+                        )
+                    except (
+                        ValueError,
+                        OSError,
+                        IOError,
+                        PermissionError,
+                        serial.SerialException,
+                    ) as e:
+                        error_msg = str(e).lower()
+                        if (
+                            "permission" in error_msg
+                            or "доступ" in error_msg
+                            or "access" in error_msg
+                            or "clearcommerror" in error_msg
+                        ):
+                            logger.error(
+                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Ошибка при проверке in_waiting после неудачи: {e}"
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Ошибка при проверке in_waiting после неудачи: {e}"
+                        )
 
         except Exception as e:
             logger.error(f"ошибка при получении статуса (попытка {attempt + 1}): {e}")
@@ -621,14 +949,16 @@ def get_status_from_uart(programmer, timeout=5.0):
     return None
 
 
-def validate_status(status_dict, expected_values, ignore_fields=None, voltage_checks=None):
+def validate_status(
+    status_dict, expected_values, ignore_fields=None, voltage_checks=None
+):
     logger = logging.getLogger(__name__)
     errors = []
     warnings = []
 
     if ignore_fields is None:
         ignore_fields = []
-    
+
     if voltage_checks is None:
         voltage_checks = {}
 
@@ -661,14 +991,13 @@ def validate_status(status_dict, expected_values, ignore_fields=None, voltage_ch
                     f"  {get_icon_emoji_fallback('check')} параметр '{key}': '{actual_str}' совпадает с ожидаемым"
                 )
 
-
     for voltage_key, voltage_range in voltage_checks.items():
         if voltage_key in ignore_fields:
             logger.debug(f"напряжение '{voltage_key}' игнорируется")
             continue
-        
+
         actual_voltage = status_dict.get(voltage_key)
-        
+
         if actual_voltage is None:
             error_msg = f"Напряжение '{voltage_key}' не найдено в ответе"
             logger.error(f"  {error_msg}")
@@ -678,7 +1007,7 @@ def validate_status(status_dict, expected_values, ignore_fields=None, voltage_ch
                 voltage_value = float(actual_voltage)
                 min_value = voltage_range.get("min")
                 max_value = voltage_range.get("max")
-                
+
                 if min_value is not None and voltage_value < min_value:
                     error_msg = f"Напряжение '{voltage_key}': значение {voltage_value} ниже минимального {min_value}"
                     logger.error(f"  {error_msg}")
@@ -734,12 +1063,102 @@ def run_test_plan(
 ):
     logger = logging.getLogger(__name__)
 
-    if not programmer.selected_uart or not programmer.selected_uart.is_open:
-        error_msg = "UART порт не открыт для тестирования"
-        logger.error(error_msg)
-        if status_callback:
-            status_callback(error_msg)
-        return False, error_msg
+    uart_is_open = False
+    if programmer.selected_uart:
+        try:
+            uart_is_open = programmer.selected_uart.is_open
+        except (ValueError, OSError, IOError) as e:
+            error_msg = str(e).lower()
+            if "closed" in error_msg or "operation on closed" in error_msg:
+                logger.debug(f"Порт закрыт при проверке is_open в run_test_plan: {e}")
+                uart_is_open = False
+            else:
+                logger.warning(f"Ошибка при проверке is_open в run_test_plan: {e}")
+                uart_is_open = False
+
+    if not programmer.selected_uart or not uart_is_open:
+        logger.warning("UART порт закрыт, попытка переоткрыть...")
+
+        uart_port = None
+
+        if not programmer.selected:
+            logger.warning("Устройство не выбрано, пытаемся найти устройства...")
+            devices = programmer.find_devices()
+            if devices:
+
+                if programmer.select_device(1):
+                    logger.info("Устройство успешно выбрано для переоткрытия порта")
+                else:
+                    logger.warning("Не удалось выбрать устройство")
+
+        if programmer.selected:
+            uart_port = detect_serial_port(programmer.selected)
+
+        if not uart_port:
+            logger.warning(
+                "Порт не определен из выбранного устройства, ищем среди всех устройств..."
+            )
+            devices = programmer.find_devices()
+            for device in devices:
+                port = detect_serial_port(device)
+                if port:
+                    uart_port = port
+                    logger.info(
+                        f"Найден порт {uart_port} для устройства {device.get('name', 'unknown')}"
+                    )
+                    break
+
+        if not uart_port:
+            error_msg = "UART порт не открыт для тестирования и не удалось определить порт для переоткрытия"
+            logger.error(error_msg)
+            if status_callback:
+                status_callback(error_msg)
+            return False, error_msg
+
+        try:
+            if status_callback:
+                status_callback(f"Переоткрытие UART порта {uart_port}...")
+            logger.info(f"Попытка переоткрыть UART порт {uart_port}")
+            programmer.selected_uart = connect_to_uart_port(uart_port)
+
+            is_reopened = False
+            if programmer.selected_uart:
+                try:
+                    is_reopened = programmer.selected_uart.is_open
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.warning(f"Порт закрыт сразу после переоткрытия: {e}")
+                        is_reopened = False
+                    else:
+                        logger.warning(
+                            f"Ошибка при проверке is_open после переоткрытия: {e}"
+                        )
+                        is_reopened = False
+
+            if is_reopened:
+                logger.info(f"UART порт {uart_port} успешно переоткрыт")
+
+                time.sleep(0.5)
+                try:
+                    programmer.selected_uart.reset_input_buffer()
+                    programmer.selected_uart.reset_output_buffer()
+                except Exception as e:
+                    logger.warning(
+                        f"Ошибка при очистке буферов после переоткрытия: {e}"
+                    )
+            else:
+                error_msg = f"Не удалось переоткрыть UART порт {uart_port}"
+                logger.error(error_msg)
+                if status_callback:
+                    status_callback(error_msg)
+                return False, error_msg
+        except Exception as e:
+            error_msg = f"Ошибка при переоткрытии UART порта: {e}"
+            logger.error(error_msg)
+            if status_callback:
+                status_callback(error_msg)
+            return False, error_msg
 
     test_plan_data = load_test_plan()
     if not test_plan_data:
@@ -826,10 +1245,56 @@ def run_test_plan(
                 )
                 if programmer.selected_uart:
                     logger.info(f"uart порт имя: {programmer.selected_uart.port}")
-                    logger.info(f"uart timeout: {programmer.selected_uart.timeout}")
-                    logger.info(
-                        f"uart in_waiting до отправки: {programmer.selected_uart.in_waiting}"
-                    )
+                    try:
+                        logger.info(f"uart timeout: {programmer.selected_uart.timeout}")
+                    except (
+                        ValueError,
+                        OSError,
+                        IOError,
+                        PermissionError,
+                        serial.SerialException,
+                    ) as e:
+                        error_msg = str(e).lower()
+                        if (
+                            "permission" in error_msg
+                            or "доступ" in error_msg
+                            or "access" in error_msg
+                            or "clearcommerror" in error_msg
+                        ):
+                            logger.error(
+                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при получении timeout (возможно, порт занят другим процессом): {e}"
+                            )
+                            raise RuntimeError(
+                                f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                            )
+                        logger.warning(f"Ошибка при получении timeout: {e}")
+                    try:
+                        logger.info(
+                            f"uart in_waiting до отправки: {programmer.selected_uart.in_waiting}"
+                        )
+                    except (
+                        ValueError,
+                        OSError,
+                        IOError,
+                        PermissionError,
+                        serial.SerialException,
+                    ) as e:
+                        error_msg = str(e).lower()
+                        if (
+                            "permission" in error_msg
+                            or "доступ" in error_msg
+                            or "access" in error_msg
+                            or "clearcommerror" in error_msg
+                        ):
+                            logger.error(
+                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                            )
+                            raise RuntimeError(
+                                f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                            )
+                        logger.warning(
+                            f"Ошибка при проверке in_waiting до отправки: {e}"
+                        )
 
                 max_retries = 5
                 retry_delays = [0.1, 0.2, 0.3, 0.5, 1.0]
@@ -853,15 +1318,80 @@ def run_test_plan(
                         )
 
                         if command.startswith("SET"):
-                            original_timeout = programmer.selected_uart.timeout
+                            try:
+                                original_timeout = programmer.selected_uart.timeout
+                            except (
+                                ValueError,
+                                OSError,
+                                IOError,
+                                PermissionError,
+                                serial.SerialException,
+                            ) as e:
+                                error_msg = str(e).lower()
+                                if (
+                                    "permission" in error_msg
+                                    or "доступ" in error_msg
+                                    or "access" in error_msg
+                                ):
+                                    logger.error(
+                                        f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при получении timeout (возможно, порт занят другим процессом): {e}"
+                                    )
+                                    raise RuntimeError(
+                                        f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                    )
+                                raise
 
-                            programmer.selected_uart.timeout = (
-                                5.0 if sys.platform == "win32" else 4.0
-                            )
+                            try:
+                                programmer.selected_uart.timeout = (
+                                    5.0 if sys.platform == "win32" else 4.0
+                                )
+                            except (
+                                ValueError,
+                                OSError,
+                                IOError,
+                                PermissionError,
+                                serial.SerialException,
+                            ) as e:
+                                error_msg = str(e).lower()
+                                if (
+                                    "permission" in error_msg
+                                    or "доступ" in error_msg
+                                    or "access" in error_msg
+                                ):
+                                    logger.error(
+                                        f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при установке timeout (возможно, порт занят другим процессом): {e}"
+                                    )
+                                    raise RuntimeError(
+                                        f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                    )
+                                raise
+
                             success = programmer.send_command_uart(
                                 command_bytes, expected_response_bytes
                             )
-                            programmer.selected_uart.timeout = original_timeout
+
+                            try:
+                                programmer.selected_uart.timeout = original_timeout
+                            except (
+                                ValueError,
+                                OSError,
+                                IOError,
+                                PermissionError,
+                                serial.SerialException,
+                            ) as e:
+                                error_msg = str(e).lower()
+                                if (
+                                    "permission" in error_msg
+                                    or "доступ" in error_msg
+                                    or "access" in error_msg
+                                ):
+                                    logger.warning(
+                                        f"Нет доступа к UART порту при восстановлении timeout: {e}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Ошибка при восстановлении timeout: {e}"
+                                    )
 
                             if success and (
                                 "SWICH_MODE" in command or "SWICH_PROFILE" in command
@@ -882,9 +1412,35 @@ def run_test_plan(
                         else:
                             logger.warning(f"не получен ответ на попытке {attempt + 1}")
                             if programmer.selected_uart:
-                                logger.warning(
-                                    f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
-                                )
+                                try:
+                                    logger.warning(
+                                        f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
+                                    )
+                                except (
+                                    ValueError,
+                                    OSError,
+                                    IOError,
+                                    PermissionError,
+                                    serial.SerialException,
+                                ) as e:
+                                    error_msg = str(e).lower()
+                                    if (
+                                        "permission" in error_msg
+                                        or "доступ" in error_msg
+                                        or "access" in error_msg
+                                        or "clearcommerror" in error_msg
+                                    ):
+                                        logger.error(
+                                            f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"Ошибка при проверке in_waiting после неудачи: {e}"
+                                        )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Ошибка при проверке in_waiting после неудачи: {e}"
+                                    )
 
                             time.sleep(0.5)
                             buffer = b""
@@ -895,10 +1451,31 @@ def run_test_plan(
                                     programmer.selected_uart
                                     and programmer.selected_uart.is_open
                                 ):
-                                    if programmer.selected_uart.in_waiting > 0:
-                                        data = programmer.selected_uart.read(
-                                            programmer.selected_uart.in_waiting
-                                        )
+                                    try:
+                                        in_waiting = programmer.selected_uart.in_waiting
+                                    except (
+                                        ValueError,
+                                        OSError,
+                                        IOError,
+                                        PermissionError,
+                                        serial.SerialException,
+                                    ) as e:
+                                        error_msg = str(e).lower()
+                                        if (
+                                            "permission" in error_msg
+                                            or "доступ" in error_msg
+                                            or "access" in error_msg
+                                            or "clearcommerror" in error_msg
+                                        ):
+                                            logger.error(
+                                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при чтении (возможно, порт занят другим процессом): {e}"
+                                            )
+                                            raise RuntimeError(
+                                                f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                            )
+                                        break
+                                    if in_waiting > 0:
+                                        data = programmer.selected_uart.read(in_waiting)
                                         if data:
                                             buffer += data
                                             logger.info(
@@ -920,11 +1497,13 @@ def run_test_plan(
                                         f"дополнительный ответ (hex): {buffer.hex()}"
                                     )
 
-                                    
-                                    if check_na_error and ("Na" in actual_response or "na" in actual_response.lower()):
+                                    if check_na_error and (
+                                        "Na" in actual_response
+                                        or "na" in actual_response.lower()
+                                    ):
                                         error_msg = f"{na_error_message}: получен ответ '{actual_response}'"
                                         logger.error(error_msg)
-                                        
+
                                         success = False
                                         final_actual_response = actual_response
                                         break
@@ -939,6 +1518,116 @@ def run_test_plan(
                                 except:
                                     actual_response = str(buffer)
 
+                    except RuntimeError as e:
+                        error_msg = str(e)
+                        if "I/O operation on closed file" in error_msg:
+                            logger.error(
+                                f"КРИТИЧЕСКАЯ ОШИБКА: UART порт закрыт во время тестирования (попытка {attempt + 1}): {e}"
+                            )
+
+                            uart_port = None
+
+                            if not programmer.selected:
+                                logger.warning(
+                                    "Устройство не выбрано при ошибке закрытого порта, пытаемся найти..."
+                                )
+                                devices = programmer.find_devices()
+                                if devices:
+                                    if programmer.select_device(1):
+                                        logger.info("Устройство успешно выбрано")
+
+                            if programmer.selected:
+                                uart_port = detect_serial_port(programmer.selected)
+
+                            if not uart_port:
+                                logger.warning(
+                                    "Порт не определен, ищем среди всех устройств..."
+                                )
+                                devices = programmer.find_devices()
+                                for device in devices:
+                                    port = detect_serial_port(device)
+                                    if port:
+                                        uart_port = port
+                                        logger.info(f"Найден порт {uart_port}")
+                                        break
+
+                            if uart_port:
+                                try:
+                                    logger.info(
+                                        f"Попытка переоткрыть порт {uart_port}..."
+                                    )
+                                    if programmer.selected_uart:
+                                        try:
+                                            programmer.selected_uart.close()
+                                        except:
+                                            pass
+                                    programmer.selected_uart = connect_to_uart_port(
+                                        uart_port
+                                    )
+                                    is_reopened = False
+                                    if programmer.selected_uart:
+                                        try:
+                                            is_reopened = (
+                                                programmer.selected_uart.is_open
+                                            )
+                                        except (ValueError, OSError, IOError) as e:
+                                            error_msg = str(e).lower()
+                                            if (
+                                                "closed" in error_msg
+                                                or "operation on closed" in error_msg
+                                            ):
+                                                logger.warning(
+                                                    f"Порт закрыт сразу после переоткрытия: {e}"
+                                                )
+                                                is_reopened = False
+                                            else:
+                                                logger.warning(
+                                                    f"Ошибка при проверке is_open после переоткрытия: {e}"
+                                                )
+                                                is_reopened = False
+
+                                    if programmer.selected_uart and is_reopened:
+                                        logger.info(
+                                            f"Порт {uart_port} успешно переоткрыт"
+                                        )
+                                        time.sleep(0.5)
+                                        try:
+                                            programmer.selected_uart.reset_input_buffer()
+                                            programmer.selected_uart.reset_output_buffer()
+                                        except:
+                                            pass
+                                        continue
+                                    else:
+                                        error_msg = (
+                                            f"Не удалось переоткрыть порт {uart_port}"
+                                        )
+                                        logger.error(error_msg)
+                                        if status_callback:
+                                            status_callback(error_msg)
+                                        return False, error_msg
+                                except Exception as reopen_error:
+                                    error_msg = (
+                                        f"Ошибка при переоткрытии порта: {reopen_error}"
+                                    )
+                                    logger.error(error_msg)
+                                    if status_callback:
+                                        status_callback(error_msg)
+                                    return False, error_msg
+                            error_msg = (
+                                f"UART порт закрыт и не удалось переоткрыть: {e}"
+                            )
+                            logger.error(error_msg)
+                            if status_callback:
+                                status_callback(error_msg)
+                            return False, error_msg
+                        else:
+                            logger.error(
+                                f"ошибка при получении ответа (попытка {attempt + 1}): {e}"
+                            )
+                            import traceback
+
+                            logger.error(f"трассировка: {traceback.format_exc()}")
+                            continue
                     except Exception as e:
                         logger.error(
                             f"ошибка при получении ответа (попытка {attempt + 1}): {e}"
@@ -953,11 +1642,14 @@ def run_test_plan(
                 )
                 logger.info("=" * 80)
 
-                
-                response_to_check = final_actual_response if success else actual_response
+                response_to_check = (
+                    final_actual_response if success else actual_response
+                )
                 if check_na_error and response_to_check:
                     if "Na" in response_to_check or "na" in response_to_check.lower():
-                        error_msg = f"{na_error_message}: получен ответ '{response_to_check}'"
+                        error_msg = (
+                            f"{na_error_message}: получен ответ '{response_to_check}'"
+                        )
                         logger.error(error_msg)
                         test_errors.append(error_msg)
                         all_tests_passed = False
@@ -967,7 +1659,9 @@ def run_test_plan(
                             progress_callback(f"<<- {response_to_check} (ОШИБКА: Na)")
                         continue
                     else:
-                        logger.info(f"Проверка на Na пройдена: ответ '{response_to_check}' не содержит Na")
+                        logger.info(
+                            f"Проверка на Na пройдена: ответ '{response_to_check}' не содержит Na"
+                        )
 
                 if not success:
                     if actual_response:
@@ -983,13 +1677,27 @@ def run_test_plan(
                     if progress_callback and actual_response:
                         progress_callback(f"<<- {actual_response}")
                     continue
-                
+
                 if progress_callback:
                     progress_callback(f"<<- {expected_response}")
             else:
                 programmer.selected_uart.reset_input_buffer()
-                programmer.selected_uart.write(command_bytes)
-                programmer.selected_uart.flush()
+
+                try:
+                    uart_port = None
+                    if hasattr(programmer.selected_uart, "port"):
+                        uart_port = programmer.selected_uart.port
+                    elif programmer.selected:
+                        uart_port = detect_serial_port(programmer.selected)
+                    programmer._safe_uart_write(
+                        command_bytes, max_retries=2, uart_port=uart_port
+                    )
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    if "I/O operation on closed file" in error_msg:
+                        logger.error(f"Порт закрыт при отправке команды теста: {e}")
+                        raise
+                    raise
 
         if wait_time > 0:
             logger.info(f"Ожидание {wait_time} секунд...")
@@ -1204,7 +1912,20 @@ def run_test_plan(
                         status_callback(f"  - {error}")
             logger.info("=" * 80)
 
-    if programmer.selected_uart and programmer.selected_uart.is_open:
+    uart_is_open_for_led_off = False
+    if programmer.selected_uart:
+        try:
+            uart_is_open_for_led_off = programmer.selected_uart.is_open
+        except (ValueError, OSError, IOError) as e:
+            error_msg = str(e).lower()
+            if "closed" in error_msg or "operation on closed" in error_msg:
+                logger.debug(f"Порт закрыт при проверке перед LED4=BLINK_OFF: {e}")
+                uart_is_open_for_led_off = False
+            else:
+                logger.warning(f"Ошибка при проверке is_open перед LED4=BLINK_OFF: {e}")
+                uart_is_open_for_led_off = False
+
+    if programmer.selected_uart and uart_is_open_for_led_off:
         try:
             from stm32_programmer.utils.uart_settings import UARTSettings
 
@@ -1222,6 +1943,11 @@ def run_test_plan(
             if progress_callback:
                 progress_callback("<<- LED4=BLINK_OFF")
             time.sleep(0.3)
+        except RuntimeError as e:
+            if "I/O operation on closed file" in str(e):
+                logger.warning(f"Порт закрыт при отправке команды LED4=BLINK_OFF: {e}")
+            else:
+                raise
         except Exception as e:
             logger.warning(f"Ошибка при отправке команды LED4=BLINK_OFF: {e}")
 
@@ -1262,12 +1988,45 @@ def program_device(
     logger = logging.getLogger(__name__)
 
     if sys.platform == "win32":
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
-        sys.stderr = io.TextIOWrapper(
-            sys.stderr.buffer, encoding="utf-8", errors="replace"
-        )
+        try:
+
+            if hasattr(sys.stdout, "buffer") and sys.stdout.buffer is not None:
+                try:
+
+                    if not sys.stdout.buffer.closed:
+                        sys.stdout = io.TextIOWrapper(
+                            sys.stdout.buffer, encoding="utf-8", errors="replace"
+                        )
+                except (ValueError, OSError, IOError, AttributeError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.warning(
+                            f"sys.stdout.buffer закрыт, пропускаем перенаправление: {e}"
+                        )
+                    else:
+                        logger.warning(f"Ошибка при перенаправлении sys.stdout: {e}")
+        except Exception as e:
+            logger.warning(f"Не удалось перенаправить sys.stdout: {e}")
+
+        try:
+
+            if hasattr(sys.stderr, "buffer") and sys.stderr.buffer is not None:
+                try:
+
+                    if not sys.stderr.buffer.closed:
+                        sys.stderr = io.TextIOWrapper(
+                            sys.stderr.buffer, encoding="utf-8", errors="replace"
+                        )
+                except (ValueError, OSError, IOError, AttributeError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.warning(
+                            f"sys.stderr.buffer закрыт, пропускаем перенаправление: {e}"
+                        )
+                    else:
+                        logger.warning(f"Ошибка при перенаправлении sys.stderr: {e}")
+        except Exception as e:
+            logger.warning(f"Не удалось перенаправить sys.stderr: {e}")
 
     programmer = BaseProgrammer()
 
@@ -1314,8 +2073,14 @@ def program_device(
             progress_percent_callback(0)
 
         if uart_port:
-            programmer.selected_uart = connect_to_uart_port(uart_port)
-        logger.info(f"Открыто UART подключение на порту {uart_port}")
+            try:
+                programmer.selected_uart = connect_to_uart_port(uart_port)
+                if programmer.selected_uart:
+                    logger.info(f"Открыто UART подключение на порту {uart_port}")
+            except serial.SerialException as e:
+                raise ValueError(f"Не удалось открыть UART порт {uart_port}: {e}")
+        else:
+            logger.warning("UART порт не указан, пропускаем открытие")
 
         if status_callback:
             status_callback("Включение питания (начальное)...")
@@ -1324,13 +2089,67 @@ def program_device(
             logger.info("ожидание стабилизации UART перед первой командой...")
             time.sleep(1.0)
             try:
-                programmer.selected_uart.reset_input_buffer()
-                programmer.selected_uart.reset_output_buffer()
-                logger.info("буферы UART очищены перед первой командой")
-                logger.info(
-                    f"UART порт состояние: открыт={programmer.selected_uart.is_open}, timeout={programmer.selected_uart.timeout}, baudrate={programmer.selected_uart.baudrate}"
-                )
-            except Exception as e:
+
+                try:
+                    is_open = programmer.selected_uart.is_open
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: UART порт закрыт при проверке is_open: {e}"
+                        )
+                        raise RuntimeError(
+                            f"I/O operation on closed file: UART порт был закрыт: {e}"
+                        )
+                    raise
+
+                if not is_open:
+                    raise RuntimeError(
+                        "I/O operation on closed file: UART порт был закрыт после открытия"
+                    )
+
+                try:
+                    programmer.selected_uart.reset_input_buffer()
+                    programmer.selected_uart.reset_output_buffer()
+                    logger.info("буферы UART очищены перед первой командой")
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: UART порт закрыт при очистке буферов: {e}"
+                        )
+                        raise RuntimeError(
+                            f"I/O operation on closed file: UART порт был закрыт при очистке буферов: {e}"
+                        )
+                    logger.warning(f"Ошибка при очистке буферов: {e}")
+                    raise RuntimeError(
+                        f"I/O operation on closed file: Ошибка при очистке буферов: {e}"
+                    )
+
+                try:
+                    is_open_after = programmer.selected_uart.is_open
+                    logger.info(
+                        f"UART порт состояние: открыт={is_open_after}, timeout={programmer.selected_uart.timeout}, baudrate={programmer.selected_uart.baudrate}"
+                    )
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.error(
+                            f"КРИТИЧЕСКАЯ ОШИБКА: UART порт закрыт после очистки буферов: {e}"
+                        )
+                        raise RuntimeError(
+                            f"I/O operation on closed file: UART порт был закрыт: {e}"
+                        )
+                    logger.warning(f"Ошибка при проверке is_open после очистки: {e}")
+            except (ValueError, OSError, IOError, RuntimeError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.error(
+                        f"КРИТИЧЕСКАЯ ОШИБКА: UART порт закрыт при очистке буферов: {e}"
+                    )
+                    raise RuntimeError(
+                        f"I/O operation on closed file: UART порт был закрыт: {e}"
+                    )
                 logger.warning(f"ошибка при очистке буферов: {e}")
 
             time.sleep(0.5)
@@ -1343,28 +2162,30 @@ def program_device(
 
         max_retries = 3
         en_12v_success = False
-        
+
         for attempt in range(max_retries):
             attempt_num = attempt + 1
-            
-            
+
             import threading
+
             animation_stop = threading.Event()
-            
+
             def animate_dots():
                 dot_count = 0
                 while not animation_stop.is_set():
                     if progress_callback:
-                        dots = "." * ((dot_count % 3) + 1) 
-                        progress_callback(f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}){dots}")
+                        dots = "." * ((dot_count % 3) + 1)
+                        progress_callback(
+                            f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}){dots}"
+                        )
                     dot_count += 1
-                    if animation_stop.wait(0.4):  
+                    if animation_stop.wait(0.4):
                         break
-            
+
             if progress_callback:
                 animation_thread = threading.Thread(target=animate_dots, daemon=True)
                 animation_thread.start()
-            
+
             if attempt > 0:
                 logger.info(
                     f"Повторная попытка отправки EN_12V=ON (попытка {attempt_num}/{max_retries})..."
@@ -1374,14 +2195,16 @@ def program_device(
             en_12v_success = programmer.send_command_uart(
                 command, "EN_12V=ON".strip().encode("utf-8")
             )
-            
-            animation_stop.set()  
-            time.sleep(0.1)  
-            
+
+            animation_stop.set()
+            time.sleep(0.1)
+
             if en_12v_success:
                 if progress_callback:
-                    
-                    progress_callback(f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}) - успешно")
+
+                    progress_callback(
+                        f"->> SET EN_12V=ON (попытка {attempt_num}/{max_retries}) - успешно"
+                    )
                 logger.info(f"EN_12V=ON успешно отправлена (попытка {attempt_num})")
                 break
             else:
@@ -1403,17 +2226,38 @@ def program_device(
             return False, "Остановлено пользователем"
         time.sleep(1)
 
-        if programmer.selected_uart and programmer.selected_uart.is_open:
+        uart_is_open_for_led = False
+        if programmer.selected_uart:
+            try:
+                uart_is_open_for_led = programmer.selected_uart.is_open
+            except (ValueError, OSError, IOError) as e:
+                error_msg = str(e).lower()
+                if "closed" in error_msg or "operation on closed" in error_msg:
+                    logger.warning(f"Порт закрыт при проверке перед LED командами: {e}")
+                    uart_is_open_for_led = False
+                else:
+                    logger.warning(
+                        f"Ошибка при проверке is_open перед LED командами: {e}"
+                    )
+                    uart_is_open_for_led = False
+
+        if programmer.selected_uart and uart_is_open_for_led:
             if progress_callback:
                 progress_callback("->> SET LED4=YELLOW")
             led_yellow_command = (
                 "SET LED4=YELLOW".strip().encode("utf-8") + line_ending_bytes
             )
-            programmer.send_command_uart(
-                led_yellow_command, "LED4=ON".strip().encode("utf-8")
-            )
-            if progress_callback:
-                progress_callback("<<- LED4=ON")
+            try:
+                programmer.send_command_uart(
+                    led_yellow_command, "LED4=ON".strip().encode("utf-8")
+                )
+                if progress_callback:
+                    progress_callback("<<- LED4=ON")
+            except RuntimeError as e:
+                if "I/O operation on closed file" in str(e):
+                    logger.error(f"Порт закрыт при отправке LED4=YELLOW: {e}")
+                else:
+                    raise
             time.sleep(0.5)
 
             if progress_callback:
@@ -1421,11 +2265,17 @@ def program_device(
             led_blink_command = (
                 "SET LED4=BLINK_ON".strip().encode("utf-8") + line_ending_bytes
             )
-            programmer.send_command_uart(
-                led_blink_command, "LED4=BLINK_ON".strip().encode("utf-8")
-            )
-            if progress_callback:
-                progress_callback("<<- LED4=BLINK_ON")
+            try:
+                programmer.send_command_uart(
+                    led_blink_command, "LED4=BLINK_ON".strip().encode("utf-8")
+                )
+                if progress_callback:
+                    progress_callback("<<- LED4=BLINK_ON")
+            except RuntimeError as e:
+                if "I/O operation on closed file" in str(e):
+                    logger.error(f"Порт закрыт при отправке LED4=BLINK_ON: {e}")
+                else:
+                    raise
             time.sleep(0.5)
 
         results = {}
@@ -1509,10 +2359,58 @@ def program_device(
                     )
                     if programmer.selected_uart:
                         logger.info(f"uart порт имя: {programmer.selected_uart.port}")
-                        logger.info(f"uart timeout: {programmer.selected_uart.timeout}")
-                        logger.info(
-                            f"uart in_waiting до отправки: {programmer.selected_uart.in_waiting}"
-                        )
+                        try:
+                            logger.info(
+                                f"uart timeout: {programmer.selected_uart.timeout}"
+                            )
+                        except (
+                            ValueError,
+                            OSError,
+                            IOError,
+                            PermissionError,
+                            serial.SerialException,
+                        ) as e:
+                            error_msg = str(e).lower()
+                            if (
+                                "permission" in error_msg
+                                or "доступ" in error_msg
+                                or "access" in error_msg
+                                or "clearcommerror" in error_msg
+                            ):
+                                logger.error(
+                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при получении timeout (возможно, порт занят другим процессом): {e}"
+                                )
+                                raise RuntimeError(
+                                    f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                )
+                            logger.warning(f"Ошибка при получении timeout: {e}")
+                        try:
+                            logger.info(
+                                f"uart in_waiting до отправки: {programmer.selected_uart.in_waiting}"
+                            )
+                        except (
+                            ValueError,
+                            OSError,
+                            IOError,
+                            PermissionError,
+                            serial.SerialException,
+                        ) as e:
+                            error_msg = str(e).lower()
+                            if (
+                                "permission" in error_msg
+                                or "доступ" in error_msg
+                                or "access" in error_msg
+                                or "clearcommerror" in error_msg
+                            ):
+                                logger.error(
+                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                                )
+                                raise RuntimeError(
+                                    f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                )
+                            logger.warning(
+                                f"Ошибка при проверке in_waiting до отправки: {e}"
+                            )
 
                     max_retries = 5
                     retry_delays = [0.1, 0.2, 0.3, 0.5, 1.0]
@@ -1525,12 +2423,52 @@ def program_device(
                         logger.info(
                             f"  UART открыт: {programmer.selected_uart.is_open}"
                         )
-                        logger.info(
-                            f"  UART таймаут: {programmer.selected_uart.timeout}"
-                        )
-                        logger.info(
-                            f"  UART in_waiting: {programmer.selected_uart.in_waiting}"
-                        )
+                        try:
+                            logger.info(
+                                f"  UART таймаут: {programmer.selected_uart.timeout}"
+                            )
+                        except (
+                            ValueError,
+                            OSError,
+                            IOError,
+                            PermissionError,
+                            serial.SerialException,
+                        ) as e:
+                            error_msg = str(e).lower()
+                            if (
+                                "permission" in error_msg
+                                or "доступ" in error_msg
+                                or "access" in error_msg
+                                or "clearcommerror" in error_msg
+                            ):
+                                logger.error(
+                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при получении timeout (возможно, порт занят другим процессом): {e}"
+                                )
+                            else:
+                                logger.warning(f"Ошибка при получении timeout: {e}")
+                        try:
+                            logger.info(
+                                f"  UART in_waiting: {programmer.selected_uart.in_waiting}"
+                            )
+                        except (
+                            ValueError,
+                            OSError,
+                            IOError,
+                            PermissionError,
+                            serial.SerialException,
+                        ) as e:
+                            error_msg = str(e).lower()
+                            if (
+                                "permission" in error_msg
+                                or "доступ" in error_msg
+                                or "access" in error_msg
+                                or "clearcommerror" in error_msg
+                            ):
+                                logger.error(
+                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                                )
+                            else:
+                                logger.warning(f"Ошибка при проверке in_waiting: {e}")
                         logger.info(
                             f"  UART baudrate: {programmer.selected_uart.baudrate}"
                         )
@@ -1580,12 +2518,49 @@ def program_device(
 
                         try:
                             if programmer.selected_uart:
-                                bytes_before = programmer.selected_uart.in_waiting
+                                try:
+                                    bytes_before = programmer.selected_uart.in_waiting
+                                except (
+                                    ValueError,
+                                    OSError,
+                                    IOError,
+                                    PermissionError,
+                                    serial.SerialException,
+                                ) as e:
+                                    error_msg = str(e).lower()
+                                    if (
+                                        "permission" in error_msg
+                                        or "доступ" in error_msg
+                                        or "access" in error_msg
+                                        or "clearcommerror" in error_msg
+                                    ):
+                                        logger.error(
+                                            f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                                        )
+                                        raise RuntimeError(
+                                            f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                        )
+                                    raise
                                 programmer.selected_uart.reset_input_buffer()
                                 logger.info(
                                     f"очищен буфер uart, было байт: {bytes_before}"
                                 )
+                        except RuntimeError:
+                            raise
                         except Exception as e:
+                            error_msg = str(e).lower()
+                            if (
+                                "permission" in error_msg
+                                or "доступ" in error_msg
+                                or "access" in error_msg
+                                or "clearcommerror" in error_msg
+                            ):
+                                logger.error(
+                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при очистке буфера (возможно, порт занят другим процессом): {e}"
+                                )
+                                raise RuntimeError(
+                                    f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                )
                             logger.warning(f"ошибка при очистке буфера: {e}")
 
                         try:
@@ -1595,8 +2570,24 @@ def program_device(
                             )
 
                             start_send_time = time.time()
-                            programmer.selected_uart.write(command)
-                            programmer.selected_uart.flush()
+
+                            try:
+                                uart_port = None
+                                if hasattr(programmer.selected_uart, "port"):
+                                    uart_port = programmer.selected_uart.port
+                                elif programmer.selected:
+                                    uart_port = detect_serial_port(programmer.selected)
+                                programmer._safe_uart_write(
+                                    command, max_retries=2, uart_port=uart_port
+                                )
+                            except RuntimeError as e:
+                                error_msg = str(e)
+                                if "I/O operation on closed file" in error_msg:
+                                    logger.error(
+                                        f"Порт закрыт при отправке команды переключения режима: {e}"
+                                    )
+                                    raise
+                                raise
                             send_duration = time.time() - start_send_time
                             logger.info(
                                 f"команда отправлена за {send_duration:.4f} сек"
@@ -1634,10 +2625,31 @@ def program_device(
                                     )
                                     break
 
-                                if programmer.selected_uart.in_waiting > 0:
-                                    data = programmer.selected_uart.read(
-                                        programmer.selected_uart.in_waiting
-                                    )
+                                try:
+                                    in_waiting = programmer.selected_uart.in_waiting
+                                except (
+                                    ValueError,
+                                    OSError,
+                                    IOError,
+                                    PermissionError,
+                                    serial.SerialException,
+                                ) as e:
+                                    error_msg = str(e).lower()
+                                    if (
+                                        "permission" in error_msg
+                                        or "доступ" in error_msg
+                                        or "access" in error_msg
+                                        or "clearcommerror" in error_msg
+                                    ):
+                                        logger.error(
+                                            f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при чтении (возможно, порт занят другим процессом): {e}"
+                                        )
+                                        raise RuntimeError(
+                                            f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                        )
+                                    break
+                                if in_waiting > 0:
+                                    data = programmer.selected_uart.read(in_waiting)
                                     if data:
                                         buffer += data
                                         logger.info(
@@ -1677,9 +2689,35 @@ def program_device(
                                     f"не получен ответ на попытке {attempt + 1}, буфер пуст"
                                 )
                                 if programmer.selected_uart:
-                                    logger.warning(
-                                        f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
-                                    )
+                                    try:
+                                        logger.warning(
+                                            f"uart in_waiting после неудачи: {programmer.selected_uart.in_waiting}"
+                                        )
+                                    except (
+                                        ValueError,
+                                        OSError,
+                                        IOError,
+                                        PermissionError,
+                                        serial.SerialException,
+                                    ) as e:
+                                        error_msg = str(e).lower()
+                                        if (
+                                            "permission" in error_msg
+                                            or "доступ" in error_msg
+                                            or "access" in error_msg
+                                            or "clearcommerror" in error_msg
+                                        ):
+                                            logger.error(
+                                                f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при проверке in_waiting (возможно, порт занят другим процессом): {e}"
+                                            )
+                                        else:
+                                            logger.warning(
+                                                f"Ошибка при проверке in_waiting после неудачи: {e}"
+                                            )
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Ошибка при проверке in_waiting после неудачи: {e}"
+                                        )
 
                                 logger.info("ожидание задержанного ответа (0.5 сек)...")
                                 time.sleep(0.5)
@@ -1696,10 +2734,35 @@ def program_device(
                                         programmer.selected_uart
                                         and programmer.selected_uart.is_open
                                     ):
-                                        if programmer.selected_uart.in_waiting > 0:
+                                        try:
+                                            in_waiting = (
+                                                programmer.selected_uart.in_waiting
+                                            )
+                                        except (
+                                            ValueError,
+                                            OSError,
+                                            IOError,
+                                            PermissionError,
+                                            serial.SerialException,
+                                        ) as e:
+                                            error_msg = str(e).lower()
+                                            if (
+                                                "permission" in error_msg
+                                                or "доступ" in error_msg
+                                                or "access" in error_msg
+                                                or "clearcommerror" in error_msg
+                                            ):
+                                                logger.error(
+                                                    f"КРИТИЧЕСКАЯ ОШИБКА: Нет доступа к UART порту при чтении (возможно, порт занят другим процессом): {e}"
+                                                )
+                                                raise RuntimeError(
+                                                    f"I/O operation on closed file: Нет доступа к UART порту (возможно, порт занят STM32CubeProgrammer или другим процессом): {e}"
+                                                )
+                                            break
+                                        if in_waiting > 0:
                                             delayed_data = (
                                                 programmer.selected_uart.read(
-                                                    programmer.selected_uart.in_waiting
+                                                    in_waiting
                                                 )
                                             )
                                             if delayed_data:
@@ -1864,8 +2927,26 @@ def program_device(
                                     and programmer.selected_uart.is_open
                                 ):
                                     programmer.selected_uart.reset_input_buffer()
-                                    programmer.selected_uart.write(command)
-                                    programmer.selected_uart.flush()
+
+                                    try:
+                                        uart_port = None
+                                        if hasattr(programmer.selected_uart, "port"):
+                                            uart_port = programmer.selected_uart.port
+                                        elif programmer.selected:
+                                            uart_port = detect_serial_port(
+                                                programmer.selected
+                                            )
+                                        programmer._safe_uart_write(
+                                            command, max_retries=2, uart_port=uart_port
+                                        )
+                                    except RuntimeError as e:
+                                        error_msg = str(e)
+                                        if "I/O operation on closed file" in error_msg:
+                                            logger.error(
+                                                f"Порт закрыт при отправке команды альтернативным способом: {e}"
+                                            )
+                                            raise
+                                        raise
                                     logger.info(
                                         "команда отправлена напрямую, ожидание 2 секунды..."
                                     )
@@ -2084,11 +3165,71 @@ def program_device(
                 f"Запись прошивки {firmware_file.name} размером {len(firmware_data)} байт "
                 f"в Flash начало (адрес {hex(selected_address)})..."
             )
+            logger.info(
+                f"Режим записи: {target_mode}, устройство: {programmer.selected}"
+            )
+            logger.info(
+                f"Тип устройства: {programmer.selected.get('type', 'unknown') if programmer.selected else 'None'}"
+            )
 
             if stop_check_callback and stop_check_callback():
                 return False, "Остановлено пользователем"
 
-            write_result = programmer.write_bytes(firmware_data, selected_address)
+            try:
+                logger.info("Вызов programmer.write_bytes() для записи прошивки...")
+                write_result = programmer.write_bytes(firmware_data, selected_address)
+                logger.info(
+                    f"programmer.write_bytes() вернул результат: {type(write_result)}, значение: {write_result}"
+                )
+            except RuntimeError as e:
+                error_msg = str(e)
+                logger.error(
+                    f"Пойман RuntimeError в program_device при записи {target_mode}: {error_msg}"
+                )
+                import traceback
+
+                logger.error(
+                    f"Трассировка RuntimeError в program_device: {traceback.format_exc()}"
+                )
+                if "I/O operation on closed file" in error_msg:
+                    detailed_error = (
+                        f"КРИТИЧЕСКАЯ ОШИБКА: I/O operation on closed file\n\n"
+                        f"Не удалось записать прошивку для режима {target_mode} из-за закрытого USB устройства.\n\n"
+                        f"Возможные причины:\n"
+                        f"  • USB устройство было закрыто другим процессом (STM32CubeProgrammer)\n"
+                        f"  • Устройство было отключено во время записи\n"
+                        f"  • USB интерфейс был закрыт\n\n"
+                        f"Решение:\n"
+                        f"  1. Закройте STM32CubeProgrammer, если он открыт\n"
+                        f"  2. Проверьте USB соединение\n"
+                        f"  3. Переподключите устройство\n"
+                        f"  4. Перезапустите программу\n\n"
+                        f"Детали ошибки:\n{error_msg}"
+                    )
+                    logger.error(detailed_error)
+                    results[target_mode] = False
+                    if status_callback:
+                        status_callback(detailed_error)
+                    return False, detailed_error
+                else:
+                    error_msg = f"Ошибка записи для режима {target_mode}: {error_msg}"
+                    logger.error(error_msg)
+                    results[target_mode] = False
+                    if status_callback:
+                        status_callback(error_msg)
+                    return False, error_msg
+            except Exception as e:
+                error_msg = (
+                    f"Неожиданная ошибка при записи для режима {target_mode}: {e}"
+                )
+                logger.error(error_msg)
+                import traceback
+
+                logger.error(f"Трассировка: {traceback.format_exc()}")
+                results[target_mode] = False
+                if status_callback:
+                    status_callback(error_msg)
+                return False, error_msg
 
             if isinstance(write_result, tuple):
                 success, error_details = write_result
@@ -2248,7 +3389,24 @@ def program_device(
                 status_callback("Результат: УСПЕХ")
             logger.warning("Программа успешно завершена")
 
-            if programmer.selected_uart and programmer.selected_uart.is_open:
+            uart_is_open_for_test = False
+            if programmer.selected_uart:
+                try:
+                    uart_is_open_for_test = programmer.selected_uart.is_open
+                except (ValueError, OSError, IOError) as e:
+                    error_msg = str(e).lower()
+                    if "closed" in error_msg or "operation on closed" in error_msg:
+                        logger.warning(
+                            f"Порт закрыт при проверке перед тестированием: {e}"
+                        )
+                        uart_is_open_for_test = False
+                    else:
+                        logger.warning(
+                            f"Ошибка при проверке is_open перед тестированием: {e}"
+                        )
+                        uart_is_open_for_test = False
+
+            if programmer.selected_uart and uart_is_open_for_test:
                 test_success, test_message = run_test_plan(
                     programmer,
                     progress_callback=progress_callback,
@@ -2352,7 +3510,27 @@ def program_device(
     except Exception as e:
         import traceback
 
-        if programmer and programmer.selected_uart and programmer.selected_uart.is_open:
+        uart_is_open_for_error_led = False
+        if programmer and programmer.selected_uart:
+            try:
+                uart_is_open_for_error_led = programmer.selected_uart.is_open
+            except (ValueError, OSError, IOError) as e_check:
+                error_msg_check = str(e_check).lower()
+                if (
+                    "closed" in error_msg_check
+                    or "operation on closed" in error_msg_check
+                ):
+                    logger.debug(
+                        f"Порт закрыт при проверке перед LED командой в блоке except: {e_check}"
+                    )
+                    uart_is_open_for_error_led = False
+                else:
+                    logger.warning(
+                        f"Ошибка при проверке is_open перед LED командой в блоке except: {e_check}"
+                    )
+                    uart_is_open_for_error_led = False
+
+        if programmer and programmer.selected_uart and uart_is_open_for_error_led:
             try:
                 from stm32_programmer.utils.uart_settings import UARTSettings
 
@@ -2361,11 +3539,19 @@ def program_device(
                 if progress_callback:
                     progress_callback("->> SET LED4=RED")
                 led_command = "SET LED4=RED".strip().encode("utf-8") + line_ending_bytes
-                programmer.send_command_uart(
-                    led_command, "LED4=ON".strip().encode("utf-8")
-                )
-                if progress_callback:
-                    progress_callback("<<- LED4=ON")
+                try:
+                    programmer.send_command_uart(
+                        led_command, "LED4=ON".strip().encode("utf-8")
+                    )
+                    if progress_callback:
+                        progress_callback("<<- LED4=ON")
+                except RuntimeError as led_error:
+                    if "I/O operation on closed file" in str(led_error):
+                        logger.warning(
+                            f"Порт закрыт при отправке LED команды в блоке except: {led_error}"
+                        )
+                    else:
+                        raise
                 time.sleep(0.5)
             except Exception as led_error:
                 logger.warning(f"Ошибка при отправке команды LED: {led_error}")
@@ -2385,10 +3571,39 @@ def program_device(
 
         if programmer and programmer.selected_uart:
             try:
-                if programmer.selected_uart.is_open:
-                    logger.info("=" * 80)
-                    logger.info("ВЫКЛЮЧЕНИЕ ПИТАНИЯ В БЛОКЕ FINALLY (гарантированно)")
-                    logger.info("=" * 80)
+
+                uart_is_open_for_finally = False
+                try:
+                    uart_is_open_for_finally = programmer.selected_uart.is_open
+                except (ValueError, OSError, IOError) as e_check:
+                    error_msg_check = str(e_check).lower()
+                    if (
+                        "closed" in error_msg_check
+                        or "operation on closed" in error_msg_check
+                    ):
+                        logger.debug(
+                            f"Порт закрыт при проверке в блоке finally: {e_check}"
+                        )
+                        uart_is_open_for_finally = False
+                    else:
+                        logger.warning(
+                            f"Ошибка при проверке is_open в блоке finally: {e_check}"
+                        )
+                        uart_is_open_for_finally = False
+
+                if uart_is_open_for_finally:
+                    try:
+                        logger.info("=" * 80)
+                        logger.info(
+                            "ВЫКЛЮЧЕНИЕ ПИТАНИЯ В БЛОКЕ FINALLY (гарантированно)"
+                        )
+                        logger.info("=" * 80)
+                    except Exception as log_err:
+
+                        try:
+                            print("ВЫКЛЮЧЕНИЕ ПИТАНИЯ В БЛОКЕ FINALLY (гарантированно)")
+                        except:
+                            pass
                     if status_callback:
                         status_callback(
                             "Выключение питания (финальное, гарантированно)..."
@@ -2400,52 +3615,60 @@ def program_device(
                     command_off = (
                         "SET EN_12V=OFF".strip().encode("utf-8") + line_ending_bytes
                     )
-                    
+
                     try:
                         max_retries = 3
                         en_12v_off_success = False
-                        
+
                         for attempt in range(max_retries):
                             attempt_num = attempt + 1
-                            
-                            
+
                             import threading
+
                             animation_stop = threading.Event()
-                            
+
                             def animate_dots():
                                 dot_count = 0
                                 while not animation_stop.is_set():
                                     if progress_callback:
-                                        dots = "." * ((dot_count % 3) + 1) 
-                                        progress_callback(f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}){dots}")
+                                        dots = "." * ((dot_count % 3) + 1)
+                                        progress_callback(
+                                            f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}){dots}"
+                                        )
                                     dot_count += 1
-                                    if animation_stop.wait(0.4): 
+                                    if animation_stop.wait(0.4):
                                         break
-                            
+
                             if progress_callback:
-                                animation_thread = threading.Thread(target=animate_dots, daemon=True)
+                                animation_thread = threading.Thread(
+                                    target=animate_dots, daemon=True
+                                )
                                 animation_thread.start()
-                            
+
                             if attempt > 0:
                                 logger.info(
                                     f"Повторная попытка отправки EN_12V=OFF (попытка {attempt_num}/{max_retries})..."
                                 )
                                 time.sleep(0.5)
-                            
+
                             try:
                                 response_received = programmer.send_command_uart(
                                     command_off, "EN_12V=OFF".strip().encode("utf-8")
                                 )
-                                
-                                animation_stop.set()  
-                                time.sleep(0.1)  
-                                
+
+                                animation_stop.set()
+                                time.sleep(0.1)
+
                                 if response_received:
                                     if progress_callback:
-                                        
-                                        progress_callback(f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}) - успешно")
+
+                                        progress_callback(
+                                            f"->> SET EN_12V=OFF (попытка {attempt_num}/{max_retries}) - успешно"
+                                        )
                                         progress_callback("<<- EN_12V=OFF")
-                                    logger.info(f"EN_12V=OFF успешно отправлена (попытка {attempt_num})")
+                                    logger.info(
+                                        f"EN_12V=OFF успешно отправлена (попытка {attempt_num})"
+                                    )
                                     en_12v_off_success = True
                                     break
                                 else:
@@ -2459,9 +3682,11 @@ def program_device(
                                 )
                                 if attempt < max_retries - 1:
                                     time.sleep(0.5)
-                        
+
                         if not en_12v_off_success:
-                            logger.warning("Команда EN_12V=OFF отправлена, но ответ не получен после всех попыток")
+                            logger.warning(
+                                "Команда EN_12V=OFF отправлена, но ответ не получен после всех попыток"
+                            )
                         time.sleep(0.5)
                     except Exception as send_error:
                         logger.warning(
@@ -2469,41 +3694,170 @@ def program_device(
                         )
 
                         try:
-                            if programmer.selected_uart.is_open:
-                                programmer.selected_uart.write(command_off)
-                                programmer.selected_uart.flush()
-                                logger.info(
-                                    "Команда EN_12V=OFF отправлена напрямую (без ожидания ответа)"
-                                )
+
+                            uart_is_open = False
+                            try:
+                                uart_is_open = programmer.selected_uart.is_open
+                            except (
+                                ValueError,
+                                OSError,
+                                IOError,
+                                PermissionError,
+                                serial.SerialException,
+                            ) as e_check:
+                                error_msg_check = str(e_check).lower()
+                                if (
+                                    "closed" in error_msg_check
+                                    or "operation on closed" in error_msg_check
+                                    or "permission" in error_msg_check
+                                ):
+                                    logger.debug(
+                                        f"Порт закрыт при проверке is_open в finally: {e_check}"
+                                    )
+                                    uart_is_open = False
+                                else:
+                                    logger.warning(
+                                        f"Ошибка при проверке is_open в finally: {e_check}"
+                                    )
+                                    uart_is_open = False
+
+                            if uart_is_open:
+
+                                try:
+                                    uart_port = None
+                                    if hasattr(programmer.selected_uart, "port"):
+                                        uart_port = programmer.selected_uart.port
+                                    elif programmer.selected:
+                                        uart_port = detect_serial_port(
+                                            programmer.selected
+                                        )
+                                    programmer._safe_uart_write(
+                                        command_off, max_retries=2, uart_port=uart_port
+                                    )
+                                except RuntimeError as e:
+                                    error_msg = str(e)
+                                    if "I/O operation on closed file" in error_msg:
+                                        logger.warning(
+                                            f"Порт закрыт при отправке EN_12V=OFF в finally: {e}"
+                                        )
+
+                                    else:
+                                        logger.warning(
+                                            f"RuntimeError при отправке EN_12V=OFF в finally: {e}"
+                                        )
+
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Ошибка при отправке EN_12V=OFF в finally: {e}"
+                                    )
+
+                                else:
+                                    logger.info(
+                                        "Команда EN_12V=OFF отправлена напрямую (без ожидания ответа)"
+                                    )
+                            else:
+                                try:
+                                    logger.debug(
+                                        "UART порт закрыт, пропускаем отправку EN_12V=OFF в finally"
+                                    )
+                                except:
+                                    pass
                         except Exception as direct_error:
-                            logger.warning(
-                                f"Ошибка при прямой отправке EN_12V=OFF: {direct_error}"
-                            )
+                            try:
+                                logger.warning(
+                                    f"Ошибка при прямой отправке EN_12V=OFF: {direct_error}"
+                                )
+                            except:
+                                pass
                 else:
-                    logger.warning(
-                        "UART порт уже закрыт в блоке finally, пропускаем выключение питания"
-                    )
+                    try:
+                        logger.warning(
+                            "UART порт уже закрыт в блоке finally, пропускаем выключение питания"
+                        )
+                    except:
+                        pass
             except (ValueError, OSError, IOError) as e:
                 error_msg_lower = str(e).lower()
-                if (
-                    "closed" in error_msg_lower
-                    or "operation on closed" in error_msg_lower
-                ):
-                    logger.warning(
-                        f"Попытка выключить питание на закрытом порту в блоке finally: {e}"
-                    )
-                else:
-                    logger.warning(
-                        f"Ошибка при выключении питания в блоке finally (порт закрыт): {e}"
-                    )
+                try:
+                    if (
+                        "closed" in error_msg_lower
+                        or "operation on closed" in error_msg_lower
+                    ):
+                        logger.warning(
+                            f"Попытка выключить питание на закрытом порту в блоке finally: {e}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Ошибка при выключении питания в блоке finally (порт закрыт): {e}"
+                        )
+                except:
+                    pass
             except Exception as e:
-                logger.warning(
-                    f"Неожиданная ошибка при выключении питания в блоке finally: {e}"
-                )
+                try:
+                    logger.warning(
+                        f"Неожиданная ошибка при выключении питания в блоке finally: {e}"
+                    )
+                except:
+                    pass
         else:
-            logger.warning(
-                "UART объект не инициализирован в блоке finally, пропускаем выключение питания"
-            )
+            try:
+                logger.warning(
+                    "UART объект не инициализирован в блоке finally, пропускаем выключение питания"
+                )
+            except:
+                pass
 
         if programmer:
-            programmer.close_uart()
+            try:
+
+                try:
+                    programmer.close_uart()
+                except Exception as close_error:
+
+                    error_msg_close = str(close_error).lower()
+                    try:
+                        if (
+                            "closed" in error_msg_close
+                            or "operation on closed" in error_msg_close
+                        ):
+                            logger.debug(
+                                f"Порт уже закрыт при вызове close_uart: {close_error}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Ошибка при закрытии UART в finally: {close_error}"
+                            )
+                    except:
+
+                        pass
+                finally:
+
+                    try:
+                        if hasattr(programmer, "selected_uart"):
+                            programmer.selected_uart = None
+                    except:
+                        pass
+            except Exception as outer_error:
+
+                try:
+                    error_msg_outer = str(outer_error).lower()
+                    if (
+                        "closed" in error_msg_outer
+                        or "operation on closed" in error_msg_outer
+                    ):
+                        logger.debug(
+                            f"Порт уже закрыт при обработке в finally: {outer_error}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Неожиданная ошибка при закрытии UART в finally: {outer_error}"
+                        )
+                except:
+                    pass
+                finally:
+
+                    try:
+                        if hasattr(programmer, "selected_uart"):
+                            programmer.selected_uart = None
+                    except:
+                        pass

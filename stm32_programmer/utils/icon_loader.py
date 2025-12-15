@@ -7,7 +7,16 @@ from PyQt5.QtCore import QSize, Qt
 ICONS_DIR = Path(__file__).parent.parent / "icons"
 
 
-THEMED_ICONS = {"refresh", "play", "stop", "cross", "document", "folder", "delete", "copy"}
+THEMED_ICONS = {
+    "refresh",
+    "play",
+    "stop",
+    "cross",
+    "document",
+    "folder",
+    "delete",
+    "copy",
+}
 
 
 def get_icon_path(icon_name, extension="png", theme=None):
